@@ -1,0 +1,41 @@
+name: it_ticket
+display_name: IT 工單
+description: IT support ticket workflow
+
+fields:
+  - name: issue_type
+    label: 問題類型
+    type: select
+    options: [硬體問題, 軟體問題, 帳號權限, 網路問題, 新設備申請, 其他]
+    required: true
+
+  - name: priority
+    label: 優先級
+    type: select
+    options: [低, 中, 高, 緊急]
+    required: true
+    default: 中
+
+  - name: description
+    label: 問題描述
+    type: text
+    required: true
+
+  - name: asset_tag
+    label: 設備編號
+    type: text
+    required: false
+
+approval:
+  required_role: it_staff
+  auto_assign: true
+  sla_hours:
+    緊急: 1
+    高: 4
+    中: 24
+    低: 72
+
+messages:
+  submitted: "您的 IT 工單已建立 (ID: {id})，我們將盡快處理。"
+  approved: "✅ 您的 IT 工單已處理完成。"
+  rejected: "❌ 您的 IT 工單需要更多資訊，IT 人員將與您聯繫。"

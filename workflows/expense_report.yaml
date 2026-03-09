@@ -1,0 +1,42 @@
+name: expense_report
+display_name: 費用報帳
+description: Expense reimbursement workflow
+
+fields:
+  - name: expense_type
+    label: 費用類別
+    type: select
+    options: [餐費, 交通費, 住宿費, 採購費, 其他]
+    required: true
+
+  - name: amount
+    label: 金額 (NTD)
+    type: number
+    required: true
+
+  - name: expense_date
+    label: 費用日期
+    type: date
+    required: true
+
+  - name: description
+    label: 說明
+    type: text
+    required: true
+
+  - name: invoice_number
+    label: 發票號碼
+    type: text
+    required: false
+
+approval:
+  required_role: manager
+  amount_threshold: 10000
+  high_amount_role: admin
+  notify_on_submit: true
+  notify_on_decision: true
+
+messages:
+  submitted: "您的報帳申請已送出 (金額: {amount} NTD)，請等候核准。"
+  approved: "✅ 您的報帳申請已核准，款項將於下次薪資日匯入。"
+  rejected: "❌ 您的報帳申請已被退回，請確認所有收據齊全。"

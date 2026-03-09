@@ -1,0 +1,40 @@
+name: leave_request
+display_name: 請假申請
+description: Employee leave request workflow
+
+fields:
+  - name: leave_type
+    label: 假別
+    type: select
+    options: [年假, 病假, 事假, 特休, 婚假, 喪假]
+    required: true
+
+  - name: start_date
+    label: 開始日期
+    type: date
+    required: true
+
+  - name: end_date
+    label: 結束日期
+    type: date
+    required: true
+
+  - name: reason
+    label: 原因
+    type: text
+    required: false
+
+  - name: substitute
+    label: 代理人
+    type: text
+    required: false
+
+approval:
+  required_role: manager
+  notify_on_submit: true
+  notify_on_decision: true
+
+messages:
+  submitted: "您的請假申請已送出，請等候主管審核。"
+  approved: "✅ 您的請假申請已核准。"
+  rejected: "❌ 您的請假申請已被退回，請聯繫主管了解原因。"

@@ -1,0 +1,59 @@
+version: "3.9"
+
+# MinionDesk — One-command deployment
+# Usage: docker-compose up -d
+# First time: docker-compose run --rm setup
+
+services:
+  # ── Host Orchestrator ──────────────────────────────────────────
+  host:
+    build:
+      context: .
+      dockerfile: host.Dockerfile
+    container_name: miniondesk-host
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+      - ./ipc:/app/ipc
+      - ./knowledge:/app/knowledge
+      # SECURITY NOTE: Mounting the Docker socket gives this container root-equivalent
+      # access to the host. This is required to spawn minion containers.
+      # Alternatives for production:
+      #   1. Run host/ directly on the host (not in Docker): python run.py
+      #   2. Use Docker TCP socket with TLS: DOCKER_HOST=tcp://... (configure in config.py)
+      #   3. Use rootless Docker: https://docs.docker.com/engine/security/rootless/
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "8080:8080"   # health check
+      - "8082:8082"   # web portal
+      - "8084:8084"   # admin dashboard
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=3)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    depends_on: []
+    networks:
+      - miniondesk
+
+  # ── Build Minion Runner Image (runs once) ───────────────────────
+  runner-builder:
+    image: docker:24-cli
+    container_name: miniondesk-builder
+    profiles: ["build"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./container:/workspace/container
+    command: >
+      docker build -t miniondesk-runner:latest /workspace/container
+    networks:
+      - miniondesk
+
+networks:
+  miniondesk:
+    name: miniondesk
+    driver: bridge
+
+volumes: {}

@@ -1,0 +1,121 @@
+{
+  "name": "miniondesk-copilot",
+  "displayName": "MinionDesk Copilot",
+  "description": "IC Design IT AI Copilot — powered by MinionDesk",
+  "version": "0.1.0",
+  "publisher": "miniondesk",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["AI", "Other"],
+  "icon": "media/icon.png",
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "miniondesk.askStuart",
+        "title": "MinionDesk: Ask Stuart (IT)",
+        "icon": "$(question)"
+      },
+      {
+        "command": "miniondesk.reviewCode",
+        "title": "MinionDesk: Code Review",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "miniondesk.explainCode",
+        "title": "MinionDesk: Explain Code",
+        "icon": "$(lightbulb)"
+      },
+      {
+        "command": "miniondesk.generateTests",
+        "title": "MinionDesk: Generate Unit Tests",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "miniondesk.analyzeLog",
+        "title": "MinionDesk: Analyze Log",
+        "icon": "$(search)"
+      },
+      {
+        "command": "miniondesk.translateScript",
+        "title": "MinionDesk: Translate Script (Shell/Perl → Python)",
+        "icon": "$(arrow-swap)"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "miniondesk.reviewCode",
+          "when": "editorHasSelection",
+          "group": "miniondesk@1"
+        },
+        {
+          "command": "miniondesk.explainCode",
+          "when": "editorHasSelection",
+          "group": "miniondesk@2"
+        },
+        {
+          "command": "miniondesk.generateTests",
+          "when": "editorHasSelection",
+          "group": "miniondesk@3"
+        },
+        {
+          "command": "miniondesk.translateScript",
+          "when": "editorHasSelection",
+          "group": "miniondesk@4"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "MinionDesk",
+      "properties": {
+        "miniondesk.serverUrl": {
+          "type": "string",
+          "default": "http://localhost:8082",
+          "description": "MinionDesk Web Portal URL"
+        },
+        "miniondesk.defaultMinion": {
+          "type": "string",
+          "default": "stuart",
+          "enum": ["phil", "kevin", "stuart", "bob"],
+          "description": "Default minion for code-related questions"
+        },
+        "miniondesk.autoReview": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically suggest code review on save"
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "miniondesk",
+          "title": "MinionDesk",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "miniondesk": [
+        {
+          "id": "miniondesk.chat",
+          "name": "AI Copilot Chat",
+          "type": "webview"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0",
+    "@vscode/vsce": "^2.22.0"
+  }
+}

@@ -1,0 +1,126 @@
+"""
+Docker Container Runner
+Spawns minion containers and collects results.
+"""
+from __future__ import annotations
+import asyncio
+import json
+import os
+import re
+from pathlib import Path
+from typing import Optional
+
+from . import config, db
+from .logger import get_logger
+_log = get_logger("runner")
+
+_MINION_NAME_RE = re.compile(r'^[a-zA-Z0-9_\-]+$')
+
+
+async def run_container(
+    chat_jid: str,
+    minion_name: str,
+    prompt: str,
+    sender_jid: str = "",
+    hints: str = "",
+) -> Optional[dict]:
+    """Spawn a minion container and return its result."""
+
+    # Validate minion_name against path-safe regex
+    if not _MINION_NAME_RE.match(minion_name):
+        raise ValueError(f"Invalid minion name: {minion_name!r}")
+
+    # Validate minion_name against allowlist
+    # None means "not configured" = allow all; empty list = deny all
+    available = getattr(config, 'AVAILABLE_MINIONS', None)
+    if available is not None:
+        if minion_name not in available:
+            raise ValueError(f"Minion {minion_name!r} not in AVAILABLE_MINIONS allowlist")
+
+    # Load persona
+    persona_path = config.MINIONS_DIR / f"{minion_name}.md"
+    if not persona_path.exists():
+        persona_path = config.MINIONS_DIR / "phil.md"
+    persona_md = persona_path.read_text(encoding="utf-8")
+
+    # Load conversation history (last 10 messages)
+    history = db.get_conversation_history(chat_jid, limit=10)
+    history_text = ""
+    if history:
+        lines = []
+        for msg in history:
+            role = "User" if msg["role"] == "user" else "Assistant"
+            lines.append(f"[{msg['ts'][:16]}] {role}: {msg['content'][:200]}")
+        history_text = "\n".join(lines)
+
+    # Build stdin payload
+    payload = {
+        "chatJid": chat_jid,
+        "minionName": minion_name,
+        "senderJid": sender_jid,
+        "prompt": prompt,
+        "personaMd": persona_md,
+        "hints": hints,
+        "conversationHistory": history_text,
+        "enabledTools": config.DEFAULT_TOOLS,
+        "ipcDir": str(config.IPC_DIR),
+        "dataDir": str(config.DATA_DIR),
+        "allowedPaths": [
+            str(config.IPC_DIR),
+            str(config.DATA_DIR),
+            "/workspace",
+        ],
+        "secrets": config.get_secrets(),
+    }
+    stdin_json = json.dumps(payload, ensure_ascii=False)
+
+    # Docker command
+    cmd = [
+        "docker", "run", "--rm",
+        "--network", config.DOCKER_NETWORK,
+        f"--memory={config.DOCKER_MEMORY}",
+        "--memory-swap", config.DOCKER_MEMORY,
+        f"--cpus={os.getenv('DOCKER_CPUS', '1.0')}",
+        "-i",
+        "-v", f"{config.IPC_DIR}:/workspace/ipc",
+        "-v", f"{config.DATA_DIR}:/workspace/data",
+        config.DOCKER_IMAGE,
+    ]
+
+    proc = None
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(stdin_json.encode()),
+            timeout=config.CONTAINER_TIMEOUT,
+        )
+
+        if stderr:
+            _log.warning(f"container stderr [{minion_name}]: {stderr.decode()[:500]}")
+
+        if not stdout.strip():
+            return {"status": "error", "error": "Container produced no output"}
+
+        return json.loads(stdout.decode())
+
+    except asyncio.TimeoutError:
+        if proc is not None:
+            try:
+                proc.kill()
+                await proc.wait()
+            except Exception:
+                pass
+        return {"status": "error", "error": f"⏱️ 處理超時（{config.CONTAINER_TIMEOUT}秒），請稍後再試。"}
+    except json.JSONDecodeError as e:
+        preview = stdout[:200] if stdout else b"(empty)"
+        _log.error(f"Container JSON decode error: {e} | stdout preview: {preview!r}")
+        return {"status": "error", "error": f"Container output parse error: {e}", "raw": preview.decode(errors="replace")}
+    except FileNotFoundError:
+        return {"status": "error", "error": "❌ Docker 未安裝或未啟動，請確認 Docker 服務正在運行。"}
+    except Exception as e:
+        return {"status": "error", "error": f"❌ 系統錯誤：{e}"}
