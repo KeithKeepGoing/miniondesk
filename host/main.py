@@ -168,6 +168,13 @@ async def main() -> None:
             await chan.send_message(chat_jid, text)
 
     async def on_ipc_task(data: dict) -> None:
+        # Handle task cancellation requests
+        if data.get("action") == "cancel":
+            task_id = data.get("task_id", "")
+            if task_id:
+                cancelled = db.cancel_scheduled_task(task_id)
+                log.info(f"Task cancel request: {task_id} → {'done' if cancelled else 'not found'}")
+            return
         if not _validate_ipc_task(data, log):
             return
         db.upsert_scheduled_task(data)
@@ -178,6 +185,8 @@ async def main() -> None:
         prompt = task.get("prompt", "")
         if not (chat_jid and minion_name and prompt):
             log.error("Scheduled task missing required fields: %s", list(task.keys()))
+            if task.get("id"):
+                db.mark_task_error(task["id"], "Missing required fields")
             return
         try:
             result = await asyncio.wait_for(

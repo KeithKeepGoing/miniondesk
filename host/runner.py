@@ -53,6 +53,15 @@ async def run_container(
             lines.append(f"[{msg['ts'][:16]}] {role}: {msg['content'][:200]}")
         history_text = "\n".join(lines)
 
+    # Inject scheduled tasks for this chat so agent can list/cancel them
+    tasks_for_chat = db.get_scheduled_tasks_for_chat(chat_jid)
+    tasks_summary = [
+        {"id": t["id"], "schedule_type": t.get("schedule_type"),
+         "schedule_value": t.get("schedule_value"), "last_run": t.get("last_run"),
+         "status": t.get("status", "active")}
+        for t in tasks_for_chat
+    ]
+
     # Build stdin payload
     payload = {
         "chatJid": chat_jid,
@@ -62,6 +71,7 @@ async def run_container(
         "personaMd": persona_md,
         "hints": hints,
         "conversationHistory": history_text,
+        "scheduledTasks": tasks_summary,
         "enabledTools": config.DEFAULT_TOOLS,
         "ipcDir": str(config.IPC_DIR),
         "dataDir": str(config.DATA_DIR),

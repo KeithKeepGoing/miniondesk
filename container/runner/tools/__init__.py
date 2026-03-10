@@ -16,6 +16,7 @@ class ToolContext:
     data_dir: str
     sender_jid: str = ""
     allowed_paths: list[str] = field(default_factory=list)
+    scheduled_tasks: list = field(default_factory=list)
 
 
 @dataclass

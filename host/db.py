@@ -146,6 +146,12 @@ def _create_tables():
         _conn.commit()
     except Exception:
         pass  # Column already exists
+    # Migration: add status column to scheduled_tasks (for existing DBs)
+    try:
+        _conn.execute("ALTER TABLE scheduled_tasks ADD COLUMN status TEXT DEFAULT 'active'")
+        _conn.commit()
+    except Exception:
+        pass  # Column already exists
 
 
 def get_conn() -> sqlite3.Connection:
@@ -194,6 +200,40 @@ def get_scheduled_tasks() -> list[dict]:
     rows = _conn.execute("SELECT * FROM scheduled_tasks").fetchall()
     cols = ["id", "chat_jid", "minion_name", "prompt", "schedule_type", "schedule_value", "last_run", "created_at"]
     return [dict(zip(cols, r)) for r in rows]
+
+
+def get_scheduled_tasks_for_chat(chat_jid: str) -> list[dict]:
+    """Return active scheduled tasks for a specific chat."""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT id, chat_jid, minion_name, prompt, schedule_type, schedule_value, last_run, status "
+        "FROM scheduled_tasks WHERE chat_jid = ? AND (status IS NULL OR status = 'active') "
+        "ORDER BY rowid DESC",
+        (chat_jid,)
+    ).fetchall()
+    cols = ["id", "chat_jid", "minion_name", "prompt", "schedule_type", "schedule_value", "last_run", "status"]
+    return [dict(zip(cols, r)) for r in rows]
+
+
+def cancel_scheduled_task(task_id: str) -> bool:
+    """Cancel (soft-delete) a scheduled task. Returns True if found."""
+    conn = get_conn()
+    cur = conn.execute(
+        "UPDATE scheduled_tasks SET status = 'cancelled' WHERE id = ?",
+        (task_id,)
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def mark_task_error(task_id: str, reason: str = "") -> None:
+    """Mark a task as errored so it won't be retried."""
+    conn = get_conn()
+    conn.execute(
+        "UPDATE scheduled_tasks SET status = 'error' WHERE id = ?",
+        (task_id,)
+    )
+    conn.commit()
 
 
 def upsert_scheduled_task(task: dict) -> None:

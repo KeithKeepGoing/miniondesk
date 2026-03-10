@@ -55,6 +55,35 @@ def _schedule_task(args: dict, ctx: ToolContext) -> str:
     return f"Task scheduled: {schedule_type} {schedule_value}"
 
 
+def _list_tasks(args: dict, ctx: "ToolContext") -> str:
+    """List scheduled tasks for this chat (injected by host at startup)."""
+    tasks = ctx.scheduled_tasks if hasattr(ctx, "scheduled_tasks") else []
+    if not tasks:
+        return "No scheduled tasks found."
+    lines = []
+    for t in tasks:
+        lines.append(f"ID: {t.get('id', '?')[:8]}... | {t.get('schedule_type')} {t.get('schedule_value')} | last_run: {t.get('last_run') or 'never'} | status: {t.get('status', 'active')}")
+    return "\n".join(lines)
+
+
+def _cancel_task(args: dict, ctx: "ToolContext") -> str:
+    """Cancel a scheduled task by its ID."""
+    task_id = args.get("task_id", "").strip()
+    if not task_id:
+        return "Error: task_id is required."
+    try:
+        import os, json, time, random, string
+        ipc_tasks = os.path.join(ctx.ipc_dir, "tasks")
+        os.makedirs(ipc_tasks, exist_ok=True)
+        uid = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
+        path = os.path.join(ipc_tasks, f"cancel_{int(time.time()*1000)}_{uid}.json")
+        with open(path, "w") as f:
+            json.dump({"action": "cancel", "task_id": task_id}, f)
+        return f"Cancellation request sent for task {task_id}"
+    except Exception as e:
+        return f"Error: {e}"
+
+
 def get_messaging_tools() -> list[Tool]:
     return [
         Tool(
@@ -90,5 +119,27 @@ def get_messaging_tools() -> list[Tool]:
                 "required": ["prompt", "schedule_type", "schedule_value"],
             },
             execute=_schedule_task,
+        ),
+        Tool(
+            name="list_tasks",
+            description="List scheduled tasks for this chat.",
+            schema={
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+            execute=_list_tasks,
+        ),
+        Tool(
+            name="cancel_task",
+            description="Cancel a scheduled task by its ID.",
+            schema={
+                "type": "object",
+                "properties": {
+                    "task_id": {"type": "string", "description": "The task ID to cancel"},
+                },
+                "required": ["task_id"],
+            },
+            execute=_cancel_task,
         ),
     ]

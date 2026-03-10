@@ -69,6 +69,10 @@ async def run_scheduler(on_task: Callable) -> None:
         tasks = db.get_scheduled_tasks()
         for task in tasks:
             try:
+                # Skip tasks that are not active (cancelled, error, etc.)
+                if task.get("status") not in (None, "active"):
+                    continue
+
                 stype = task.get("schedule_type", "")
                 sval = task.get("schedule_value", "")
                 task_id = task.get("id", "<unknown>")

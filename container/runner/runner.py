@@ -68,6 +68,7 @@ async def run(inp: dict) -> dict:
         data_dir=inp.get("dataDir", "/workspace/data"),
         sender_jid=inp.get("senderJid", ""),
         allowed_paths=inp.get("allowedPaths", ["/workspace"]),
+        scheduled_tasks=inp.get("scheduledTasks", []),
     )
 
     system = inp.get("personaMd", "You are a helpful assistant.")
