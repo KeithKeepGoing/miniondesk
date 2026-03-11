@@ -1,0 +1,244 @@
+# Changelog
+
+All notable changes to MinionDesk will be documented in this file.
+
+---
+
+## [1.2.2] - 2026-03-11
+
+### Added
+- 對話記憶功能：Agent 現在能記住最近 20 則對話歷史
+- host/runner.py 在建立 payload 前呼叫 db.get_history()
+- container/runner/runner.py 將歷史注入 LLM 對話串
+
+### Fixed
+- 修正每次對話都從零開始的問題（get_history 存在但從未被呼叫）
+
+---
+
+## [1.2.1] — 2026-03-11
+
+### 🔌 Dynamic Container Tool Hot-swap (Skills 2.0)
+
+Solves the core Docker limitation: DevEngine-generated skills that add new Python tools to containers no longer require an image rebuild.
+
+#### Architecture: `dynamic_tools/` volume mount
+- `miniondesk/host/runner.py`: mounts `{BASE_DIR}/dynamic_tools/` → `/app/dynamic_tools:ro` in every container
+- `container/runner/runner.py`: `_load_dynamic_tools()` — scans `/app/dynamic_tools/*.py` at startup and dynamically imports each file via `importlib.util`; each file registers itself with the tool registry
+- No image rebuild needed — drop a `.py` file in `dynamic_tools/`, next container run picks it up automatically
+
+#### Skills Engine: `container_tools:` manifest field
+- `skills_engine.py` now supports `container_tools:` in `manifest.yaml`
+- `install_skill()`: copies `container_tools` files into `{BASE_DIR}/dynamic_tools/` (flattened by filename)
+- `uninstall_skill()`: removes corresponding files from `dynamic_tools/`
+- `list_available_skills()` returns `container_tools` field for dashboard display
+
+#### New built-in skill: `web-search`
+- Demonstrates the `container_tools:` pattern end-to-end
+- Adds `web_search` tool (DuckDuckGo Instant Answer API, no API key)
+- Adds `SKILL.md` behavioral guide to system prompt
+- `manifest.yaml` with both `adds:` and `container_tools:` fields
+
+### 📁 Files Added / Changed
+- `miniondesk/host/runner.py` (dynamic_tools volume mount)
+- `container/runner/runner.py` (`_load_dynamic_tools()`)
+- `miniondesk/host/skills_engine.py` (container_tools install/uninstall)
+- `dynamic_tools/.gitkeep` (new — git-tracked placeholder)
+- `skills/web-search/` (new — example container_tool skill)
+
+---
+
+## [1.2.0] — 2026-03-11
+
+### ✨ Features — DevEngine + Superpowers Skills
+
+#### 🔧 DevEngine — 7-stage LLM-powered Development Pipeline (`host/dev_engine.py`)
+- `ANALYZE → DESIGN → IMPLEMENT → TEST → REVIEW → DOCUMENT → DEPLOY` pipeline
+- Each stage (except DEPLOY) runs a Docker container with a specialized system prompt
+- **DEPLOY** stage: parses `--- FILE: path ---` blocks from IMPLEMENT output and writes files to disk (path traversal protection included)
+- **Interactive mode**: pauses after each stage for user review; resume with `/dev resume <session_id>`
+- **Auto mode**: runs all 7 stages unattended in sequence
+- Session lifecycle: `pending → running → paused → completed | failed | cancelled`
+- Sessions persisted in `dev_sessions` SQLite table (survives restarts)
+- `start_dev_session()`, `resume_dev_session()`, `cancel_dev_session()` public API
+- IPC message type `dev_task` — trigger from any minion via JSON file
+- Progress notifications sent to group via `notify_fn`
+
+#### ⚡ Superpowers Skills Engine (`host/skills_engine.py`)
+- YAML manifest-based installable plugin packages (`skills/{name}/manifest.yaml`)
+- **5 built-in skill packages** in `skills/`:
+  - `brainstorming` — design-first thinking gate
+  - `systematic-debugging` — 4-phase root cause protocol (Observe → Hypothesize → Isolate → Fix)
+  - `planning` — atomic step decomposition before action
+  - `verification` — mandatory verification before claiming task done
+  - `subagent-delegation` — parallel subagent spawning pattern
+- `install_skill(name)` / `uninstall_skill(name)` — copy/remove skill files
+- `get_installed_skill_docs()` — returns combined SKILL.md content for system prompt injection
+- `list_available_skills()` / `list_installed_skills()` — discovery API
+- Installed skill docs automatically injected into every container system prompt via `runner.py`
+- IPC message types: `apply_skill`, `uninstall_skill`, `list_skills`
+
+#### 📊 Dashboard Updates (DevEngine + Skills pages)
+- New **🔧 DevEngine** page: live session table with status badges, stage progress, prompt preview
+- New **⚡ Skills** page: skill cards showing name, version, description, install status
+- New API endpoints: `/api/dev_sessions`, `/api/skills`
+- DevEngine sessions polled every 10s; Skills polled every 30s
+- Filter sessions by: ALL / RUNNING / DONE / FAILED / PAUSED
+
+#### 🔧 container/runner/runner.py — skillDocs injection
+- `skillDocs` from payload now injected as `## Installed Superpowers Skills` section in system prompt
+- All installed skills' instructions are available to every container agent automatically
+
+### 📁 Files Added / Changed
+- `miniondesk/host/dev_engine.py` (new)
+- `miniondesk/host/skills_engine.py` (new)
+- `skills/brainstorming/` (new)
+- `skills/systematic-debugging/` (new)
+- `skills/planning/` (new)
+- `skills/verification/` (new)
+- `skills/subagent-delegation/` (new)
+- `container/runner/runner.py` (skillDocs injection)
+- `miniondesk/host/runner.py` (skillDocs payload)
+- `miniondesk/host/ipc.py` (dev_task / apply_skill / uninstall_skill / list_skills handlers)
+- `miniondesk/host/dashboard.py` (DevEngine + Skills pages)
+
+---
+
+## [1.1.0] — 2026-03-11
+
+### ✨ Features — ported from evoclaw
+
+#### 🧬 Adaptive Genome Evolution (`host/evolution.py`)
+- `calculate_fitness()` — maps (success, response_ms) → 0.0-1.0 fitness score
+- `evolve_genome()` — 3-dimension evolution: response_style, formality, technical_depth; updates DB only on actual change
+- `genome_hints()` — generates plain-English behavioral hints injected into container system prompt
+- `evolution_loop()` — async loop evolving all group genomes every 300s
+- New DB tables: `evolution_runs`, `evolution_log`
+- Evolution tracked after every container run in `main.py`
+
+#### 🛡️ Immune / Anti-spam System (`host/immune.py`)
+- In-memory sliding window (60s) per-sender rate limiting
+- `is_allowed()` — checks DB block status + in-memory rate (max 15 msgs/min)
+- Auto-block after 30 msgs/min, persisted to `immune_threats` table
+- `record_message()` — DB tracking for audit trail
+- Integrated into `handle_inbound()` before trigger check
+
+#### 📊 Dashboard Web UI (`host/dashboard.py`)
+- Pure Python stdlib HTTP server (no Flask/npm/React required)
+- 4-page SPA: Status / Groups / Genome / Logs
+- Real-time SSE log stream at `/api/logs/stream`
+- Genome evolution visualized with progress bars
+- Minion status table with fitness badges
+- JSON APIs: `/api/status`, `/api/groups`, `/api/logs`
+- Runs in daemon thread, integrated into `asyncio.gather()`
+
+#### 📄 Per-group CLAUDE.md Injection (evoclaw-style)
+- `groups/global/CLAUDE.md` — baseline instructions for all minions
+- `groups/{folder}/CLAUDE.md` — per-group overrides
+- Both injected into container system prompt at runtime
+- `container/runner/runner.py` — reads `globalClaudeMd` + `groupClaudeMd` from payload
+
+#### 🔄 Dual-output Prevention
+- Container runner tracks `send_message` tool calls via wrapper
+- If agent already sent reply via IPC `send_message`, final `result` is suppressed
+- Prevents duplicate messages to users
+
+#### 🌟 Mini — 主助理名稱
+- 預設助理從 `phil` 改為 **`mini`**，觸發詞 `@Mini`
+- 新增 `ASSISTANT_NAME=Mini` 環境變數（config.py + .env.example）
+- 新增 `minions/mini.md` persona 檔案
+- 所有程式預設值（db.py / main.py / dept_init.py / dept_router.py）更新為 `mini`
+- global CLAUDE.md 更新 Mini 身份描述
+- `assistantName` 欄位透過 payload 注入 container
+
+### 🔧 Improvements
+- `main.py`: 7 async loops (was 4): IPC + Scheduler + Evolution + Health Monitor + Orphan Cleanup + Dashboard + Stop Event
+- `main.py`: Version bumped to 1.1.0
+- `host/runner.py`: CLAUDE.md injection + `genome_hints()` + `assistantName` 傳遞
+- `db.py`: 3 new tables (evolution_runs, evolution_log, immune_threats) + default minion=mini
+- New `groups/global/CLAUDE.md` + `groups/example-group/CLAUDE.md`
+
+### 📁 Files Added / Changed
+- `miniondesk/host/evolution.py` (new)
+- `miniondesk/host/immune.py` (new)
+- `miniondesk/host/dashboard.py` (new)
+- `minions/mini.md` (new)
+- `groups/global/CLAUDE.md` (new)
+- `groups/example-group/CLAUDE.md` (new)
+- `RELEASE.md` (new)
+
+---
+
+## [1.0.0] — 2026-03-11
+
+### 🎉 Initial Release
+
+MinionDesk — 從零打造的企業 AI 助理框架。不 fork 任何現有框架，參考 nanoclaw（極簡隔離）+ openclaw（模型無關 gateway）+ evoclaw（Python + 企業安全）的精華。
+
+### ✨ Features
+
+#### 核心框架
+- **模型無關 Provider 抽象層**：Gemini / Claude / OpenAI / Ollama / vLLM 一套介面，換模型只改一行設定
+- **工具系統**：`Tool` + `ToolRegistry` 設計，JSON Schema 格式，各 provider 自動轉換
+- **小小兵 Runner**：Docker container 隔離，agentic loop 最多 30 輪，stdin/stdout JSON 通訊
+- **模型自動偵測**：按優先順序偵測 API key，無縫切換
+
+#### 小小兵人設
+- **Phil**：主助理 Boss，一般問答與協調
+- **Kevin**：HR — 請假、招募、薪資、福利
+- **Stuart**：IT — 技術支援、設備、帳號管理
+- **Bob**：財務 — 報銷、採購、預算審核
+
+#### Host 系統
+- **SQLite WAL 模式**：高效並發讀寫，`PRAGMA busy_timeout=5000`
+- **IPC 檔案監控**：`watch_ipc()` 輪詢各 group `.ipc/` 目錄
+- **per-group GroupQueue**：每個群組訊息串行執行，避免競態條件
+- **Docker 熔斷器**：連續 5 次失敗 → 60 秒冷卻
+- **任務排程**：支援 cron、interval、once 三種格式
+
+#### 頻道支援
+- **Telegram**：完整 bot 整合，訊息自動切分（4096 字元限制），send_document 傳檔
+- **Discord**：stub（框架已備，待擴充）
+- **Teams**：stub（框架已備，待擴充）
+
+#### 企業模組
+- **Knowledge Base**：SQLite FTS5 全文搜尋 + LIKE fallback，支援批次目錄匯入
+- **Workflow Engine**：YAML 定義工作流程，支援 notify / approval 步驟
+- **Calendar**：Google/Outlook 日曆整合 stub
+- **RBAC**：角色權限控制（admin / manager / employee / readonly）
+- **Department Router**：關鍵字評分自動路由到對應部門小小兵
+- **Department Init**：批次初始化部門群組
+
+#### 內建工作流程
+- `leave_request.yaml`：請假申請（主管審批 → HR 確認）
+- `expense_report.yaml`：費用報銷（按金額分級審批）
+- `it_ticket.yaml`：IT 工單（分類 + 優先級）
+
+#### 安全
+- **Container network=none**：容器無法連外網
+- **Memory 512MB / CPU 1.0** 限制
+- **非 root 用戶**：container 以 `minion:1000` 執行
+- **DASHBOARD_HOST=127.0.0.1** 預設本機存取
+- **UTF-8 強制編碼**：所有檔案讀寫指定 `encoding="utf-8"`
+
+#### 開發體驗
+- **CLI**：`python run.py start|setup|check`
+- **Setup Wizard**：互動式設定嚮導
+- **System Check**：自動驗證 Python / Docker / 映像 / LLM / Telegram
+- **Container 詳細日誌**：毫秒時間戳 + emoji 標籤，方便除錯
+
+### 📦 Providers
+
+| Provider | 環境變數 | 優先順序 |
+|----------|---------|---------|
+| Google Gemini | `GOOGLE_API_KEY` | 1（首選） |
+| Anthropic Claude | `ANTHROPIC_API_KEY` | 2 |
+| OpenAI | `OPENAI_API_KEY` | 3 |
+| OpenAI-compatible | `OPENAI_BASE_URL` | 4 |
+| Ollama | `OLLAMA_URL` | 5 |
+
+### 📁 Project Stats
+
+- Python 檔案：43 個
+- 總程式碼行數：~2,400 行
+- 外部依賴：12 個（host）+ 5 個（container）

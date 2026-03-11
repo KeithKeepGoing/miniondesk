@@ -1,0 +1,226 @@
+"""Docker container runner for MinionDesk minions."""
+from __future__ import annotations
+import asyncio
+import json
+import logging
+import os
+import sys
+import tempfile
+import time
+from pathlib import Path
+from typing import Any
+
+from . import config
+
+logger = logging.getLogger(__name__)
+
+# Per-group failure tracking (circuit breaker)
+_group_fail_counts: dict[str, int] = {}
+_group_fail_time: dict[str, float] = {}
+_active_lock = asyncio.Lock()
+
+
+def _is_windows() -> bool:
+    return sys.platform == "win32"
+
+
+def _docker_path(path: str) -> str:
+    """Convert host path to Docker-compatible path (handles Windows)."""
+    if _is_windows():
+        # Convert C:\... to /c/...
+        p = path.replace("\\", "/")
+        if len(p) > 1 and p[1] == ":":
+            p = "/" + p[0].lower() + p[2:]
+        return p
+    return path
+
+
+async def _stop_container(name: str) -> None:
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "docker", "stop", "--time", "10", name,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await proc.wait()
+    except Exception:
+        pass
+
+
+async def run_minion(
+    group_jid: str,
+    group_folder: str,
+    minion_name: str,
+    prompt: str,
+    chat_jid: str,
+    enabled_tools: list[str] | None = None,
+) -> dict[str, Any]:
+    """
+    Spin up a Docker container, run the minion, return result.
+    Circuit breaker: 5 failures → 60s cooldown per group.
+    """
+    # Circuit breaker check
+    fail_count = _group_fail_counts.get(group_jid, 0)
+    if fail_count >= config.CONTAINER_MAX_FAILS:
+        since = time.time() - _group_fail_time.get(group_jid, 0)
+        if since < config.CONTAINER_FAIL_COOLDOWN:
+            return {
+                "status": "error",
+                "result": f"⚠️ Container circuit breaker open ({fail_count} failures). Retry in {int(config.CONTAINER_FAIL_COOLDOWN - since)}s.",
+            }
+        else:
+            _group_fail_counts[group_jid] = 0
+
+    # Load persona
+    persona_path = Path(config.MINIONS_DIR) / f"{minion_name}.md"
+    persona_md = persona_path.read_text(encoding="utf-8") if persona_path.exists() else f"You are {minion_name}, a helpful assistant."
+
+    # Load CLAUDE.md — global + per-group (evoclaw-style behavioral injection)
+    global_claude_path = Path(config.GROUPS_DIR) / "global" / "CLAUDE.md"
+    global_claude_md = global_claude_path.read_text(encoding="utf-8") if global_claude_path.exists() else ""
+
+    group_claude_path = Path(config.GROUPS_DIR) / group_folder / "CLAUDE.md"
+    group_claude_md = group_claude_path.read_text(encoding="utf-8") if group_claude_path.exists() else ""
+
+    # Genome-based behavioral hints
+    from . import db
+    from .evolution import genome_hints
+    from .skills_engine import get_installed_skill_docs
+    hints = genome_hints(group_jid)
+
+    # Installed Superpowers skill docs (injected into system prompt)
+    skill_docs = get_installed_skill_docs()
+
+    # Load conversation history
+    conv_history = []
+    try:
+        raw_history = db.get_history(group_jid, limit=20)
+        for h in raw_history:
+            role = h.get("role", "user")
+            content = str(h.get("content", "")).strip()
+            if content:
+                conv_history.append({"role": role, "content": content})
+    except Exception:
+        pass
+
+    payload = {
+        "prompt": prompt,
+        "personaMd": persona_md,
+        "globalClaudeMd": global_claude_md,
+        "groupClaudeMd": group_claude_md,
+        "skillDocs": skill_docs,          # Superpowers skill instructions
+        "hints": hints,
+        "chatJid": chat_jid,
+        "enabledTools": enabled_tools,
+        "assistantName": config.ASSISTANT_NAME,
+        "conversationHistory": conv_history,
+    }
+
+    # Mount dirs
+    groups_dir       = _docker_path(str(Path(config.GROUPS_DIR).resolve()))
+    group_dir        = _docker_path(str((Path(config.GROUPS_DIR) / group_folder).resolve()))
+    base_dir         = _docker_path(str(Path(config.BASE_DIR).resolve()))
+
+    # Dynamic tools dir — skills with container_tools: install here; container auto-imports
+    dynamic_tools_host = Path(config.BASE_DIR) / "dynamic_tools"
+    dynamic_tools_host.mkdir(parents=True, exist_ok=True)
+    dynamic_tools_docker = _docker_path(str(dynamic_tools_host.resolve()))
+
+    container_name = f"minion-{group_folder}-{int(time.time())}"
+
+    mounts = [
+        f"{group_dir}:/workspace/group",
+        f"{base_dir}:/workspace/project:ro",
+        f"{dynamic_tools_docker}:/app/dynamic_tools:ro",   # hot-swap skill tools
+    ]
+
+    # Forward relevant env vars
+    env_vars = []
+    for key in [
+        "GOOGLE_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY",
+        "OLLAMA_URL", "OPENAI_BASE_URL", "OPENAI_MODEL",
+        "GEMINI_MODEL", "CLAUDE_MODEL", "OLLAMA_MODEL",
+    ]:
+        val = os.getenv(key)
+        if val:
+            env_vars.extend(["-e", f"{key}={val}"])
+
+    # Build docker run command
+    cmd = [
+        "docker", "run", "--rm",
+        "--name", container_name,
+        "--network", "none",        # No internet from container
+        "--memory", "512m",
+        "--cpus", "1.0",
+    ]
+    for mount in mounts:
+        cmd.extend(["-v", mount])
+    cmd.extend(env_vars)
+    cmd.append(config.CONTAINER_IMAGE)
+
+    logger.info("Starting container %s for group %s", container_name, group_jid)
+
+    stdin_data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+
+    async with _active_lock:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except Exception as exc:
+            logger.error("Failed to start container: %s", exc)
+            _group_fail_counts[group_jid] = _group_fail_counts.get(group_jid, 0) + 1
+            _group_fail_time[group_jid] = time.time()
+            return {"status": "error", "result": f"Failed to start container: {exc}"}
+
+    try:
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(stdin_data),
+            timeout=config.CONTAINER_TIMEOUT,
+        )
+    except asyncio.TimeoutError:
+        logger.error("Container %s timed out after %ds", container_name, config.CONTAINER_TIMEOUT)
+        try:
+            await _stop_container(container_name)
+        except Exception:
+            pass
+        return {"status": "error", "result": "⏱️ Request timed out. Please try again."}
+    except asyncio.CancelledError:
+        logger.warning("Container %s cancelled", container_name)
+        try:
+            await _stop_container(container_name)
+        except Exception:
+            pass
+        raise
+
+    # Log stderr at INFO level for emoji-tagged lines
+    if stderr:
+        for line in stderr.decode("utf-8", errors="replace").splitlines():
+            if any(e in line for e in ["🚀","🤖","🔧","📥","📤","✅","❌","⚠️","🔄","📝"]):
+                logger.info("container[%s]: %s", container_name, line)
+            else:
+                logger.debug("container[%s]: %s", container_name, line)
+
+    # Parse output
+    stdout_str = stdout.decode("utf-8", errors="replace")
+    start_marker = "<<<MINIONDESK_OUTPUT_START>>>"
+    end_marker   = "<<<MINIONDESK_OUTPUT_END>>>"
+    if start_marker in stdout_str and end_marker in stdout_str:
+        start = stdout_str.index(start_marker) + len(start_marker)
+        end   = stdout_str.index(end_marker)
+        json_str = stdout_str[start:end].strip()
+        try:
+            result = json.loads(json_str)
+            _group_fail_counts[group_jid] = 0
+            return result
+        except json.JSONDecodeError as exc:
+            logger.error("JSON parse error: %s", exc)
+    else:
+        logger.error("No output markers in container stdout")
+
+    _group_fail_counts[group_jid] = _group_fail_counts.get(group_jid, 0) + 1
+    _group_fail_time[group_jid] = time.time()
+    return {"status": "error", "result": "No valid output from container."}
