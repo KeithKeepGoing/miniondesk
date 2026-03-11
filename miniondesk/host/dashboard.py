@@ -416,6 +416,23 @@ def _get_skills(limit: int = 50) -> list[dict]:
         return []
 
 
+def _get_health() -> dict:
+    """Health check: verify DB connectivity and return system health status."""
+    health: dict = {"status": "ok", "checks": {}}
+
+    # DB connectivity check
+    try:
+        conn = db._conn()
+        result = conn.execute("SELECT 1").fetchone()
+        health["checks"]["db"] = "ok" if result else "fail"
+    except Exception as exc:
+        health["checks"]["db"] = f"error: {exc}"
+        health["status"] = "degraded"
+
+    health["uptime"] = int(time.time() - _start_time)
+    return health
+
+
 # ─── HTTP handler ─────────────────────────────────────────────────────────────
 
 class _Handler(BaseHTTPRequestHandler):
@@ -440,6 +457,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(_get_dev_sessions())
         elif path == "/api/skills":
             self._json(_get_skills())
+        elif path == "/api/health":
+            self._json(_get_health())
         else:
             self.send_error(404)
 
@@ -493,6 +512,14 @@ async def run_dashboard() -> None:
     install_log_handler()
     host = config.DASHBOARD_HOST
     port = config.DASHBOARD_PORT
+
+    # Warn if default dashboard password is unchanged
+    if config.DASHBOARD_PASSWORD == "changeme":
+        logger.warning(
+            "SECURITY: DASHBOARD_PASSWORD is set to the default 'changeme'. "
+            "The dashboard has no authentication — set DASHBOARD_PASSWORD and firewall port %d.",
+            port,
+        )
     t = threading.Thread(
         target=_run_server,
         args=(host, port),
