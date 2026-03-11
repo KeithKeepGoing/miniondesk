@@ -2,6 +2,8 @@
 
 **企業 AI 助理框架** — 由 **Mini** 領軍的小小兵團隊，Docker 隔離，模型無關，資料完全自架。
 
+> *目前版本：v1.2.3*
+
 ```
 主助理 Mini + 部門小小兵（Kevin/Stuart/Bob）
 每個小小兵 = 一個 Docker container，有名字、人設、專屬工具
@@ -11,6 +13,8 @@ SQLite + Docker，資料不出公司
 對話記憶：Agent 記住最近 20 則對話，跨 container 保持上下文
 DevEngine：7 階段 AI 流水線，讓 MinionDesk 自己寫程式
 Superpowers：可安裝行為插件，強化所有小小兵能力
+Thread-safe：circuit breaker 與 genome 更新使用 lock / 原子 SQL
+穩定性：DB connection atexit 關閉、deque log buffer、正確 uptime
 ```
 
 ---

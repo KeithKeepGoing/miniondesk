@@ -2,6 +2,62 @@
 
 ---
 
+## v1.2.3 — 2026-03-12
+
+### 穩定性修正（Stability Fixes）
+
+本次版本專注於修正 v1.2.2 發現的 8 個穩定性問題，無新功能。
+
+#### Fix 1: Circuit Breaker 競態條件（runner.py）
+
+`_group_fail_counts` 與 `_group_fail_time` 兩個全域 dict 在多執行緒環境下存在 TOCTOU 競態條件。
+新增 `threading.Lock`（`_group_lock`）並在所有讀寫操作前加上 `with _group_lock:`。
+
+#### Fix 2: DB Connection 未關閉（db.py）
+
+程序正常關閉時，thread-local SQLite connection 從未被關閉，可能造成 WAL file lock 殘留。
+改用 `atexit.register(_close_connections)` 確保關閉。
+
+#### Fix 3: History Loading 例外靜默吞掉（runner.py）
+
+`conv_history` 載入區塊中的 `except Exception: pass` 完全隱藏錯誤，難以除錯。
+改為 `logger.warning("Failed to load conversation history: %s", exc)` 記錄警告。
+
+#### Fix 4: Dashboard Log Buffer OOM 風險（dashboard.py）
+
+`_log_buffer: list[dict]` 使用 `pop(0)` 手動維護上限，`pop(0)` 為 O(n) 操作，大量日誌時效能差且有競態風險。
+改用 `deque(maxlen=500)` 自動管理上限，O(1) 操作。
+
+#### Fix 5: /api/status 回傳絕對時間戳（dashboard.py）
+
+`"uptime": int(time.time())` 回傳的是 Unix epoch 時間戳，而非運行秒數。
+新增 `_start_time = time.time()` 模組載入時記錄，改為 `int(time.time() - _start_time)`。
+
+#### Fix 6: JSON Parse 失敗時訊息靜默消失（runner.py）
+
+`json.JSONDecodeError` 被捕捉後只記錄 log，沒有回傳任何結果，呼叫端收不到任何錯誤提示。
+改為同時記錄詳細 log 並回傳 `{"error": ..., "reply": "⚠️ 處理發生錯誤，請重試。"}`。
+
+#### Fix 7: Skills API 無分頁（dashboard.py）
+
+`_get_skills()` 直接回傳所有 skills，skills/ 目錄過大時可能回傳大量資料。
+新增 `limit: int = 50` 參數，預設最多回傳 50 筆。
+
+#### Fix 8: Genome 並發更新競態條件（db.py）
+
+`update_genome()` 先 Python 端 `get_genome()` 讀取再寫入，多個 goroutine 同時更新時會互相覆蓋。
+改為單一原子 SQL 語句，使用 `COALESCE` 在 SQL 層合併預設值，消除 read-then-write race。
+
+### 升級指引
+
+```bash
+# 不需重建 Docker image（僅 host 端修正）
+# 不需重建資料庫（schema 無變更）
+python run.py start
+```
+
+---
+
 ## v1.2.2 — 2026-03-11
 
 ### 🧠 對話記憶持久化（Conversation Memory）
@@ -253,6 +309,7 @@ MinionDesk 企業 AI 助理框架首次發布。
 
 | 版本 | 日期 | 重點 |
 |------|------|------|
+| v1.2.3 | 2026-03-12 | 穩定性修正（thread safety / db cleanup / error handling） |
 | v1.2.2 | 2026-03-11 | 對話記憶持久化（get_history 正式啟用） |
 | v1.2.1 | 2026-03-11 | dynamic_tools 熱插拔 + container_tools manifest |
 | v1.2.0 | 2026-03-11 | DevEngine 7 階段流水線 + Superpowers Skills |

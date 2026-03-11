@@ -6,6 +6,7 @@ import logging
 import os
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,7 @@ logger = logging.getLogger(__name__)
 # Per-group failure tracking (circuit breaker)
 _group_fail_counts: dict[str, int] = {}
 _group_fail_time: dict[str, float] = {}
+_group_lock = threading.Lock()
 _active_lock = asyncio.Lock()
 
 
@@ -60,16 +62,17 @@ async def run_minion(
     Circuit breaker: 5 failures → 60s cooldown per group.
     """
     # Circuit breaker check
-    fail_count = _group_fail_counts.get(group_jid, 0)
-    if fail_count >= config.CONTAINER_MAX_FAILS:
-        since = time.time() - _group_fail_time.get(group_jid, 0)
-        if since < config.CONTAINER_FAIL_COOLDOWN:
-            return {
-                "status": "error",
-                "result": f"⚠️ Container circuit breaker open ({fail_count} failures). Retry in {int(config.CONTAINER_FAIL_COOLDOWN - since)}s.",
-            }
-        else:
-            _group_fail_counts[group_jid] = 0
+    with _group_lock:
+        fail_count = _group_fail_counts.get(group_jid, 0)
+        if fail_count >= config.CONTAINER_MAX_FAILS:
+            since = time.time() - _group_fail_time.get(group_jid, 0)
+            if since < config.CONTAINER_FAIL_COOLDOWN:
+                return {
+                    "status": "error",
+                    "result": f"⚠️ Container circuit breaker open ({fail_count} failures). Retry in {int(config.CONTAINER_FAIL_COOLDOWN - since)}s.",
+                }
+            else:
+                _group_fail_counts[group_jid] = 0
 
     # Load persona
     persona_path = Path(config.MINIONS_DIR) / f"{minion_name}.md"
@@ -100,8 +103,8 @@ async def run_minion(
             content = str(h.get("content", "")).strip()
             if content:
                 conv_history.append({"role": role, "content": content})
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Failed to load conversation history: %s", exc)
 
     payload = {
         "prompt": prompt,
@@ -172,8 +175,9 @@ async def run_minion(
             )
         except Exception as exc:
             logger.error("Failed to start container: %s", exc)
-            _group_fail_counts[group_jid] = _group_fail_counts.get(group_jid, 0) + 1
-            _group_fail_time[group_jid] = time.time()
+            with _group_lock:
+                _group_fail_counts[group_jid] = _group_fail_counts.get(group_jid, 0) + 1
+                _group_fail_time[group_jid] = time.time()
             return {"status": "error", "result": f"Failed to start container: {exc}"}
 
     try:
@@ -214,13 +218,19 @@ async def run_minion(
         json_str = stdout_str[start:end].strip()
         try:
             result = json.loads(json_str)
-            _group_fail_counts[group_jid] = 0
+            with _group_lock:
+                _group_fail_counts[group_jid] = 0
             return result
         except json.JSONDecodeError as exc:
-            logger.error("JSON parse error: %s", exc)
+            logger.error("JSON parse error: %s | output: %.200s", exc, stdout_str[-500:])
+            with _group_lock:
+                _group_fail_counts[group_jid] = _group_fail_counts.get(group_jid, 0) + 1
+                _group_fail_time[group_jid] = time.time()
+            return {"error": f"JSON parse failed: {exc}", "reply": "⚠️ 處理發生錯誤，請重試。"}
     else:
         logger.error("No output markers in container stdout")
 
-    _group_fail_counts[group_jid] = _group_fail_counts.get(group_jid, 0) + 1
-    _group_fail_time[group_jid] = time.time()
+    with _group_lock:
+        _group_fail_counts[group_jid] = _group_fail_counts.get(group_jid, 0) + 1
+        _group_fail_time[group_jid] = time.time()
     return {"status": "error", "result": "No valid output from container."}

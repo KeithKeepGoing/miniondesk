@@ -4,6 +4,20 @@ All notable changes to MinionDesk will be documented in this file.
 
 ---
 
+## [1.2.3] - 2026-03-12
+
+### Fixed
+- 修正 circuit breaker 競態條件（threading.Lock 保護全域 dict）
+- 修正 DB connection 未關閉造成的 file lock 殘留（atexit 正確關閉）
+- 修正 history loading 例外被靜默吞掉（改為 logger.warning）
+- 修正 Dashboard log buffer OOM 風險（改用 deque maxlen=500）
+- 修正 /api/status 回傳絕對時間戳而非 uptime 秒數
+- 修正 JSON parse 失敗時訊息靜默消失（改為回傳錯誤提示）
+- 修正 Skills API 無分頁（限制最多回傳 50 筆）
+- 修正 genome 並發更新競態條件（改為原子操作）
+
+---
+
 ## [1.2.2] - 2026-03-11
 
 ### Added
