@@ -2,7 +2,7 @@
 
 **企業 AI 助理框架** — 由 **Mini** 領軍的小小兵團隊，Docker 隔離，模型無關，資料完全自架。
 
-> *目前版本：v1.2.4*
+> *目前版本：v1.2.5*
 
 ```
 主助理 Mini + 部門小小兵（Kevin/Stuart/Bob）
@@ -17,6 +17,8 @@ Thread-safe：circuit breaker 與 genome 更新使用 lock / 原子 SQL
 穩定性：DB connection atexit 關閉、deque log buffer、正確 uptime
 並行容器：Semaphore 取代全域 Lock，最多 4 個容器同時執行
 架構改進：request_id 追蹤、schema 驗證、健康端點、輸入截斷
+安全加固：minion 名稱路徑驗證、container stdout 大小限制、SSE fan-out 修正
+背壓保護：GroupQueue 有界佇列、config 啟動驗證、ensure_future 全面替換
 ```
 
 ---

@@ -4,6 +4,23 @@ All notable changes to MinionDesk will be documented in this file.
 
 ---
 
+## [1.2.5] - 2026-03-12
+
+### Architecture Improvements (Second Round)
+
+- `ipc.py`：`dev_task` handler 中的 `asyncio.ensure_future` 改為 `asyncio.create_task` 並加入 done callback，確保例外不被靜默丟失（#12）
+- `scheduler.py`：task dispatch 中剩餘的 `asyncio.ensure_future` 改為 `asyncio.create_task` 並加入 done callback（#13）
+- `queue.py`：`GroupQueue` 由無界改為有界佇列（`maxsize=QUEUE_MAX_PER_GROUP`，預設 50），佇列滿時丟棄訊息並記錄 WARNING，防止記憶體無限成長（#14）
+- `runner.py`：minion 名稱以正則表達式驗證（`[A-Za-z0-9_-]{1,64}`），拒絕含路徑穿越字元的 DB 存儲值（#15）
+- `dashboard.py`：SSE `/api/logs/stream` 由共享 `_log_queue`（每條日誌只有一個客戶端收到）改為 per-client 專屬佇列 + fan-out 廣播模式，所有連線客戶端均收到完整日誌流；連線斷開時自動清除客戶端佇列（#16）
+- `ipc.py`：`processed` set 改為有界 deque + set 組合（maxlen=10,000），防止長期執行下的記憶體洩漏（#17）
+- `runner.py`：`proc.communicate()` 完成後檢查 stdout 大小，超過 `CONTAINER_MAX_OUTPUT_BYTES`（預設 10MB）時記錄錯誤並回傳失敗，防止失控容器 OOM（#18）
+- `config.py`：新增 `validate()` 函數，啟動時快速失敗驗證（numeric bounds、LLM key 存在、channel token 設定），並以 `_int_env`/`_float_env` 替換 `int()`/`float()` 硬轉型，壞值時 fallback 並記錄 WARNING；在 `main.py` 啟動時呼叫（#19）
+- `config.py`：`CONTAINER_IMAGE` 預設值從 `miniondesk-agent:latest` 改為 `miniondesk-agent:1.2.5`，避免隱式 image 版本漂移（#21）
+- `miniondesk/__init__.py`：版本號更新為 1.2.5
+
+---
+
 ## [1.2.4] - 2026-03-12
 
 ### Architecture Improvements

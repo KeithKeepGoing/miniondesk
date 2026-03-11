@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import sys
 import tempfile
 import threading
@@ -12,6 +13,9 @@ from pathlib import Path
 from typing import Any
 
 from . import config
+
+# Allowed characters in a minion name (prevent path traversal via DB value)
+_MINION_NAME_RE = re.compile(r'^[A-Za-z0-9_-]{1,64}$')
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +93,16 @@ async def run_minion(
                 }
             else:
                 _group_fail_counts[group_jid] = 0
+
+    rid = f"[{request_id}] " if request_id else ""
+
+    # Validate minion name to prevent path traversal via DB-stored values
+    if not _MINION_NAME_RE.match(minion_name):
+        logger.error(
+            "%sInvalid minion name rejected (potential path traversal): %r",
+            rid, minion_name,
+        )
+        return {"status": "error", "result": f"Invalid minion name: {minion_name!r}"}
 
     # Load persona
     persona_path = Path(config.MINIONS_DIR) / f"{minion_name}.md"
@@ -177,7 +191,6 @@ async def run_minion(
     cmd.extend(env_vars)
     cmd.append(config.CONTAINER_IMAGE)
 
-    rid = f"[{request_id}] " if request_id else ""
     logger.info("%sStarting container %s for group %s", rid, container_name, group_jid)
 
     stdin_data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -219,6 +232,18 @@ async def run_minion(
         except Exception:
             pass
         raise
+
+    # Guard against runaway containers emitting giant outputs (OOM risk)
+    max_bytes = config.CONTAINER_MAX_OUTPUT_BYTES
+    if max_bytes > 0 and len(stdout) > max_bytes:
+        logger.error(
+            "%sContainer %s stdout exceeded size limit: %d > %d bytes — truncating and failing",
+            rid, container_name, len(stdout), max_bytes,
+        )
+        with _group_lock:
+            _group_fail_counts[group_jid] = _group_fail_counts.get(group_jid, 0) + 1
+            _group_fail_time[group_jid] = time.time()
+        return {"status": "error", "result": "Container output exceeded size limit."}
 
     # Log stderr at INFO level for emoji-tagged lines
     if stderr:
