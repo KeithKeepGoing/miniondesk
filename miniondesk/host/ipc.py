@@ -1,6 +1,7 @@
 """IPC watcher — reads JSON files from group .ipc directories and routes them."""
 from __future__ import annotations
 import asyncio
+import collections
 import json
 import logging
 import os
@@ -9,6 +10,11 @@ import time
 from typing import Callable, Awaitable
 
 from . import config
+
+# Bounded deque used as an LRU cache for processed IPC file paths.
+# Prevents the set from growing unbounded on long-running instances.
+# Max capacity: 10,000 entries (well above any realistic burst).
+_PROCESSED_MAXLEN = 10_000
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +44,10 @@ async def watch_ipc(
 ) -> None:
     """Continuously poll all group .ipc directories for new IPC messages."""
     logger.info("IPC watcher started")
-    processed: set[str] = set()
+    # Bounded deque acts as a fixed-size LRU set to prevent unbounded memory growth.
+    # Files are deleted after processing so re-processing is only a theoretical risk.
+    _processed_deque: collections.deque = collections.deque(maxlen=_PROCESSED_MAXLEN)
+    processed: set[str] = set()  # kept in sync with deque for O(1) lookup
 
     while True:
         try:
@@ -68,6 +77,11 @@ async def watch_ipc(
                             continue
                         if str(f) in processed:
                             continue
+                        # Evict oldest entry when deque is full to keep set bounded
+                        if len(_processed_deque) == _PROCESSED_MAXLEN:
+                            evicted = _processed_deque[0]  # leftmost = oldest
+                            processed.discard(evicted)
+                        _processed_deque.append(str(f))
                         processed.add(str(f))
                         try:
                             payload = json.loads(f.read_text(encoding="utf-8"))
@@ -118,9 +132,15 @@ async def _handle_ipc(
         prompt = payload.get("prompt", "")
         mode   = payload.get("mode", "auto")
         if prompt:
-            asyncio.ensure_future(
+            def _on_dev_task_done(task: asyncio.Task) -> None:
+                exc = task.exception() if not task.cancelled() else None
+                if exc:
+                    logger.error("IPC dev_task failed for group %s: %s", group_jid, exc)
+
+            task = asyncio.create_task(
                 dev_engine.start_dev_session(group_jid, prompt, mode, _route)
             )
+            task.add_done_callback(_on_dev_task_done)
         else:
             await route_message(chat_jid, "⚠️ dev_task: missing prompt", "")
 

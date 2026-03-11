@@ -2,6 +2,77 @@
 
 ---
 
+## v1.2.5 — 2026-03-12
+
+### 架構改進第二輪（Architecture Improvements Round 2）
+
+本次版本修正 10 個在 v1.2.4 後發現的新架構問題，涵蓋記憶體安全、並發模型、安全加固與可觀測性。
+
+#### Fix 1: ipc.py dev_task 中遺漏的 ensure_future 替換（#12）
+
+v1.2.4 修正了 `dev_engine.py` 中的 `ensure_future`，但 `ipc.py` 第 121 行的 `dev_task` handler 被遺漏。
+改為 `asyncio.create_task()` 並加入 `.add_done_callback()` 記錄例外。
+
+#### Fix 2: scheduler.py task dispatch ensure_future 替換（#13）
+
+`run_scheduler()` 中的 `asyncio.ensure_future(dispatch_fn(...))` 改為 `asyncio.create_task()` 並加入 done callback。
+Task dispatch 失敗不再被靜默丟棄。
+
+#### Fix 3: GroupQueue 有界佇列背壓保護（#14）
+
+`asyncio.Queue()` 改為 `asyncio.Queue(maxsize=config.QUEUE_MAX_PER_GROUP)`（預設 50）。
+佇列達 75% 容量時記錄 WARNING；佇列滿時丟棄新訊息並記錄 WARNING，防止記憶體無限成長。
+新增 `QUEUE_MAX_PER_GROUP` 環境變數可調整。
+
+#### Fix 4: Minion 名稱路徑穿越防護（#15）
+
+`host/runner.py` 中 `minion_name` 在用於構建檔案路徑前，以 `[A-Za-z0-9_-]{1,64}` 正則驗證。
+含 `../` 或特殊字元的 DB 存儲值會被拒絕並回傳結構化錯誤。
+
+#### Fix 5: SSE 日誌流 fan-out 修正（#16）
+
+原實作使用共享 `_log_queue`，多個瀏覽器分頁連線時每條日誌只有一個客戶端收到。
+改為 per-client 專屬 `queue.Queue`，`_QueueHandler` 廣播至所有訂閱者。
+連線斷開（BrokenPipeError）時在 `finally` 區塊中移除客戶端佇列，防止洩漏。
+
+#### Fix 6: IPC watcher processed set 有界化（#17）
+
+`watch_ipc()` 中的 `processed: set[str]` 無限成長。
+改為 `deque(maxlen=10_000)` + `set` 組合，維持 O(1) 查找的同時限制記憶體佔用。
+超過容量時自動淘汰最舊條目。
+
+#### Fix 7: Container stdout 大小限制（#18）
+
+`proc.communicate()` 完成後檢查 `len(stdout) > CONTAINER_MAX_OUTPUT_BYTES`（預設 10MB）。
+超出限制時記錄錯誤、增加熔斷計數並回傳失敗，防止失控容器耗盡主機記憶體。
+新增 `CONTAINER_MAX_OUTPUT_BYTES` 環境變數可調整（設 0 停用）。
+
+#### Fix 8: Config 啟動驗證與安全轉型（#19）
+
+新增 `config.validate()` 函數：
+- 警告：無 channel token、無 LLM API key
+- 錯誤（ValueError）：CONTAINER_TIMEOUT、CONTAINER_MAX_CONCURRENT、QUEUE_MAX_PER_GROUP、MAX_PROMPT_LENGTH 為 0 或負數
+新增 `_int_env()` / `_float_env()` helper，壞值時 fallback 並記錄 WARNING（取代直接 `int()` 轉型）。
+`main.run_host()` 啟動時呼叫 `config.validate()`，在啟動任何服務前快速失敗。
+
+#### Fix 9: Container image 版本鎖定（#21）
+
+`CONTAINER_IMAGE` 預設值從 `miniondesk-agent:latest` 改為 `miniondesk-agent:1.2.5`。
+防止 `docker pull` 後靜默切換到不相容的新 image。
+升級時需明確指定新版本號。
+
+### 升級指引
+
+```bash
+# 如使用預設 image tag，需重建（tag 從 :latest 改為 :1.2.5）
+docker build -t miniondesk-agent:1.2.5 ./container
+
+# 不需重建資料庫（schema 無變更）
+python run.py start
+```
+
+---
+
 ## v1.2.4 — 2026-03-12
 
 ### 架構改進（Architecture Improvements）
@@ -374,6 +445,7 @@ MinionDesk 企業 AI 助理框架首次發布。
 
 | 版本 | 日期 | 重點 |
 |------|------|------|
+| v1.2.5 | 2026-03-12 | 架構改進第二輪（背壓保護 / 路徑穿越防護 / SSE fan-out / stdout 限制 / config 驗證） |
 | v1.2.4 | 2026-03-12 | 架構改進（semaphore / request_id / schema 驗證 / health API / 輸入截斷） |
 | v1.2.3 | 2026-03-12 | 穩定性修正（thread safety / db cleanup / error handling） |
 | v1.2.2 | 2026-03-11 | 對話記憶持久化（get_history 正式啟用） |

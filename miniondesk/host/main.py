@@ -191,6 +191,9 @@ async def run_host() -> None:
     """Start the MinionDesk host."""
     logger.info("MinionDesk v%s starting...", __version__)
 
+    # Fail fast on bad configuration before starting any services
+    config.validate()
+
     # Init directories and DB
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
     config.GROUPS_DIR.mkdir(parents=True, exist_ok=True)

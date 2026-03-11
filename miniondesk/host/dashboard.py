@@ -18,9 +18,12 @@ logger = logging.getLogger(__name__)
 
 # ─── Log capture ──────────────────────────────────────────────────────────────
 
-_log_queue: queue.Queue = queue.Queue(maxsize=500)
+# _log_buffer holds the recent history for new SSE clients to catch up on connect.
+# _sse_subscribers is a list of per-client queues — each SSE connection gets its
+# own queue so ALL clients receive ALL log entries (fan-out), not just one.
 _log_buffer: deque = deque(maxlen=500)
 _log_lock = threading.Lock()
+_sse_subscribers: list[queue.Queue] = []
 _start_time = _time_module.time()
 
 LEVEL_COLORS = {
@@ -43,10 +46,12 @@ class _QueueHandler(logging.Handler):
             }
             with _log_lock:
                 _log_buffer.append(entry)
-            try:
-                _log_queue.put_nowait(entry)
-            except queue.Full:
-                pass
+                # Fan-out: deliver to every active SSE subscriber's dedicated queue
+                for sub_q in _sse_subscribers:
+                    try:
+                        sub_q.put_nowait(entry)
+                    except queue.Full:
+                        pass  # Slow client — skip this entry rather than blocking
         except Exception:
             pass
 
@@ -484,19 +489,40 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-cache")
         self.send_header("X-Accel-Buffering", "no")
         self.end_headers()
+
+        # Each SSE client gets its own dedicated queue (fan-out model).
+        # This ensures all connected clients receive all log entries,
+        # not just one client per entry (the old shared-queue bug).
+        client_q: queue.Queue = queue.Queue(maxsize=200)
+        with _log_lock:
+            # Send recent history so the new client sees existing logs
+            for entry in list(_log_buffer)[-50:]:
+                try:
+                    client_q.put_nowait(entry)
+                except queue.Full:
+                    break
+            _sse_subscribers.append(client_q)
+
         try:
             while True:
                 try:
-                    entry = _log_queue.get(timeout=15)
+                    entry = client_q.get(timeout=15)
                     data = json.dumps(entry, ensure_ascii=False)
                     self.wfile.write(f"data: {data}\n\n".encode("utf-8"))
                     self.wfile.flush()
                 except queue.Empty:
-                    # Keep-alive
+                    # Keep-alive ping
                     self.wfile.write(b": ping\n\n")
                     self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError):
             pass
+        finally:
+            # Always remove the client queue on disconnect (prevents leak)
+            with _log_lock:
+                try:
+                    _sse_subscribers.remove(client_q)
+                except ValueError:
+                    pass
 
 
 # ─── Dashboard server ─────────────────────────────────────────────────────────
