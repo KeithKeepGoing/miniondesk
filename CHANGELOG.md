@@ -4,6 +4,21 @@ All notable changes to MinionDesk will be documented in this file.
 
 ---
 
+## [1.2.4] - 2026-03-12
+
+### Architecture Improvements
+- 新增 `CONTAINER_MAX_CONCURRENT` 設定值，以 `asyncio.Semaphore` 取代全域 `asyncio.Lock`，允許最多 N 個容器同時執行（預設 4），修正所有群組被單一鎖序列化的問題（#1）
+- Container JSON 輸出增加 schema 驗證，確認必要欄位（`status`、`result`）存在，遺失欄位時記錄錯誤並回傳結構化錯誤訊息（#2）
+- Container 執行加入 `request_id` 日誌關聯，所有相關 log 行均標記同一 request ID，方便追蹤單一請求的完整流程（#3）
+- Dashboard 啟動時若 `DASHBOARD_PASSWORD` 為預設值 `changeme`，發出 WARNING 安全警告；新增 `/api/health` 端點，包含 DB 連線狀態確認（#4, #6）
+- IPC watcher 將 `db.get_all_groups()` 移至迴圈外，每次輪詢只查詢一次並建立 folder→group 字典，修正 O(n²) 查詢問題（#5）
+- 輸入提示詞進行基本截斷清理（`MAX_PROMPT_LENGTH`，預設 4000 字元），並記錄截斷警告（#7）
+- DevEngine 以 `asyncio.create_task()` 取代已棄用的 `asyncio.ensure_future()`，並加入 done callback 確保 pipeline 例外不被靜默吞掉（#8）
+- `skills_engine.list_available_skills()` 將 `_load_registry()` 移至迴圈外，從 O(n) 次磁碟讀取降至 1 次（#9）
+- `miniondesk/__init__.py` 版本號更新為 1.2.4；`main.py` 改從 `__version__` 讀取版本，不再使用硬編碼字串（#10）
+
+---
+
 ## [1.2.3] - 2026-03-12
 
 ### Fixed

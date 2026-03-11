@@ -2,6 +2,71 @@
 
 ---
 
+## v1.2.4 — 2026-03-12
+
+### 架構改進（Architecture Improvements）
+
+本次版本針對 10 個架構問題進行修正，涵蓋並發模型、輸出驗證、日誌追蹤、安全警告與效能優化。
+
+#### Fix 1: 全域鎖改為可配置 Semaphore（runner.py）
+
+原本 `_active_lock`（`asyncio.Lock`）在整個容器執行期間持鎖，導致所有群組被序列化。
+改為 `asyncio.Semaphore(CONTAINER_MAX_CONCURRENT)`，預設允許 4 個容器並行，且僅在 spawn 階段持鎖。
+
+#### Fix 2: Container 輸出 Schema 驗證（runner.py）
+
+JSON 解析成功後增加 schema 驗證，確認 `status`、`result` 欄位存在。
+遺失欄位時記錄結構化錯誤並回傳 `{"status": "error", "result": "..."}` 而非靜默通過。
+
+#### Fix 3: Request ID 日誌關聯（main.py, runner.py）
+
+每次 `_run_and_reply()` 產生 `request_id = uuid4().hex[:8]`，注入所有相關 log 行。
+可用 `grep "\[abc12345\]"` 追蹤單一請求的完整生命週期。
+
+#### Fix 4: Dashboard 安全警告 + /api/health 端點（dashboard.py）
+
+啟動時若 `DASHBOARD_PASSWORD == 'changeme'` 發出 WARNING 日誌。
+新增 `/api/health` 端點，回傳 DB 連線狀態、uptime、整體 health status。
+
+#### Fix 5: IPC Watcher N+1 查詢修正（ipc.py）
+
+`db.get_all_groups()` 從每個目錄迴圈內移至迴圈外，每次輪詢僅查詢一次。
+以 `folder_to_group` dict 做 O(1) 查找，消除 O(groups²) 查詢模式。
+
+#### Fix 6: 輸入截斷清理（main.py）
+
+`handle_inbound()` 在派發前截斷超過 `MAX_PROMPT_LENGTH`（預設 4000）的提示詞。
+截斷時記錄 WARNING，確保操作人員知情。
+
+#### Fix 7: DevEngine 使用 asyncio.create_task（dev_engine.py）
+
+`asyncio.ensure_future()`（Python 3.10+ 已棄用）全部改為 `asyncio.create_task()`。
+加入 `.add_done_callback()` 確保 pipeline 例外不被靜默丟失。
+
+#### Fix 8: skills_engine 降低磁碟讀取次數（skills_engine.py）
+
+`list_available_skills()` 將 `_load_registry()` 移至迴圈外。
+20 個 skills 的情況下，磁碟讀取從 20 次降至 1 次。
+
+#### Fix 9: Health Monitor 錯誤等級提升（main.py）
+
+`_health_monitor_loop()` 的例外從 `logger.debug` 改為 `logger.warning`，確保在預設 INFO 日誌等級下可見。
+
+#### Fix 10: 版本號統一（__init__.py, main.py）
+
+`miniondesk/__init__.py` 更新為 `__version__ = "1.2.4"`。
+`main.py` 改為 `logger.info("MinionDesk v%s starting...", __version__)`，不再硬編碼版本字串。
+
+### 升級指引
+
+```bash
+# 不需重建 Docker image（僅 host 端修正）
+# 不需重建資料庫（schema 無變更）
+python run.py start
+```
+
+---
+
 ## v1.2.3 — 2026-03-12
 
 ### 穩定性修正（Stability Fixes）
@@ -309,6 +374,7 @@ MinionDesk 企業 AI 助理框架首次發布。
 
 | 版本 | 日期 | 重點 |
 |------|------|------|
+| v1.2.4 | 2026-03-12 | 架構改進（semaphore / request_id / schema 驗證 / health API / 輸入截斷） |
 | v1.2.3 | 2026-03-12 | 穩定性修正（thread safety / db cleanup / error handling） |
 | v1.2.2 | 2026-03-11 | 對話記憶持久化（get_history 正式啟用） |
 | v1.2.1 | 2026-03-11 | dynamic_tools 熱插拔 + container_tools manifest |

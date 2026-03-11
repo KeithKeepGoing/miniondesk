@@ -19,7 +19,22 @@ logger = logging.getLogger(__name__)
 _group_fail_counts: dict[str, int] = {}
 _group_fail_time: dict[str, float] = {}
 _group_lock = threading.Lock()
-_active_lock = asyncio.Lock()
+
+# Container concurrency semaphore — limits simultaneous Docker runs
+# Uses CONTAINER_MAX_CONCURRENT from config (default 4)
+# Replaces old global asyncio.Lock which serialized ALL groups
+_container_semaphore: asyncio.Semaphore | None = None
+
+
+def _get_semaphore() -> asyncio.Semaphore:
+    global _container_semaphore
+    if _container_semaphore is None:
+        _container_semaphore = asyncio.Semaphore(config.CONTAINER_MAX_CONCURRENT)
+    return _container_semaphore
+
+
+# Required keys in container JSON output (schema validation)
+_REQUIRED_OUTPUT_KEYS = frozenset({"status", "result"})
 
 
 def _is_windows() -> bool:
@@ -56,6 +71,7 @@ async def run_minion(
     prompt: str,
     chat_jid: str,
     enabled_tools: list[str] | None = None,
+    request_id: str = "",
 ) -> dict[str, Any]:
     """
     Spin up a Docker container, run the minion, return result.
@@ -161,11 +177,15 @@ async def run_minion(
     cmd.extend(env_vars)
     cmd.append(config.CONTAINER_IMAGE)
 
-    logger.info("Starting container %s for group %s", container_name, group_jid)
+    rid = f"[{request_id}] " if request_id else ""
+    logger.info("%sStarting container %s for group %s", rid, container_name, group_jid)
 
     stdin_data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
 
-    async with _active_lock:
+    # Semaphore limits concurrent Docker runs (configurable, default 4)
+    # Does NOT hold semaphore across full container lifetime — only during spawn
+    semaphore = _get_semaphore()
+    async with semaphore:
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -174,7 +194,7 @@ async def run_minion(
                 stderr=asyncio.subprocess.PIPE,
             )
         except Exception as exc:
-            logger.error("Failed to start container: %s", exc)
+            logger.error("%sFailed to start container: %s", rid, exc)
             with _group_lock:
                 _group_fail_counts[group_jid] = _group_fail_counts.get(group_jid, 0) + 1
                 _group_fail_time[group_jid] = time.time()
@@ -218,11 +238,22 @@ async def run_minion(
         json_str = stdout_str[start:end].strip()
         try:
             result = json.loads(json_str)
+            # Schema validation: ensure required keys present
+            missing = _REQUIRED_OUTPUT_KEYS - result.keys()
+            if missing:
+                logger.error(
+                    "%sContainer output missing required keys %s | output: %.200s",
+                    rid, missing, json_str[:200],
+                )
+                with _group_lock:
+                    _group_fail_counts[group_jid] = _group_fail_counts.get(group_jid, 0) + 1
+                    _group_fail_time[group_jid] = time.time()
+                return {"status": "error", "result": f"Container output schema error: missing {missing}"}
             with _group_lock:
                 _group_fail_counts[group_jid] = 0
             return result
         except json.JSONDecodeError as exc:
-            logger.error("JSON parse error: %s | output: %.200s", exc, stdout_str[-500:])
+            logger.error("%sJSON parse error: %s | output: %.200s", rid, exc, stdout_str[-500:])
             with _group_lock:
                 _group_fail_counts[group_jid] = _group_fail_counts.get(group_jid, 0) + 1
                 _group_fail_time[group_jid] = time.time()
