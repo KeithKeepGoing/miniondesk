@@ -4,7 +4,7 @@ build-backend = "setuptools.backends.legacy:build"
 
 [project]
 name = "miniondesk"
-version = "1.2.15"
+version = "1.2.16"
 description = "Enterprise AI assistant framework — Docker-isolated minions, model-agnostic"
 readme = "README.md"
 requires-python = ">=3.11"

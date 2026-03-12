@@ -4,6 +4,19 @@ All notable changes to MinionDesk will be documented in this file.
 
 ---
 
+## [1.2.16] - 2026-03-12
+
+### Fixed
+- **#97** dashboard.py: replace N+1 `db.get_genome()` loop with single `db.get_all_genomes()` query — eliminates full-table read per group on every dashboard refresh
+
+### Added
+- `db.get_all_genomes()` — returns all genome rows in one SELECT query
+
+### Chore
+- Version bump 1.2.15 → 1.2.16
+
+---
+
 ## [1.2.15] - 2026-03-12
 
 ### Security

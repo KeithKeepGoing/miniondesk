@@ -267,6 +267,27 @@ def get_genome(group_jid: str) -> dict:
     }
 
 
+def get_all_genomes() -> dict[str, dict]:
+    """Return all genomes as a dict keyed by group_jid.
+    Replaces N individual get_genome() calls with a single query (Issue #97).
+    """
+    cur = _conn().execute(
+        "SELECT group_jid, response_style, formality, "
+        "       technical_depth, fitness_score "
+        "FROM genome"
+    )
+    return {
+        row["group_jid"]: {
+            "group_jid":       row["group_jid"],
+            "response_style":  row["response_style"],
+            "formality":       row["formality"],
+            "technical_depth": row["technical_depth"],
+            "fitness_score":   row["fitness_score"],
+        }
+        for row in cur.fetchall()
+    }
+
+
 def _clamp01(value) -> float | None:
     """Clamp a float value to [0.0, 1.0], or return None if value is None."""
     if value is None:

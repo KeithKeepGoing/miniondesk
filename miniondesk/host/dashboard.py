@@ -403,11 +403,15 @@ def _get_status() -> dict:
 
 def _get_groups() -> list[dict]:
     groups = db.get_all_groups()
-    result = []
-    for g in groups:
-        genome = db.get_genome(g["jid"])
-        result.append({**g, "genome": genome})
-    return result
+    # Single batch query replaces N individual get_genome() calls (Issue #97).
+    genomes = db.get_all_genomes()
+    return [{**g, "genome": genomes.get(g["jid"], {
+        "group_jid":       g["jid"],
+        "response_style":  "balanced",
+        "formality":       0.5,
+        "technical_depth": 0.5,
+        "fitness_score":   0.5,
+    })} for g in groups]
 
 
 def _get_dev_sessions() -> list[dict]:

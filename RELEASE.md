@@ -2,6 +2,33 @@
 
 ---
 
+## v1.2.16 — 2026-03-12
+
+### Performance Fix: Dashboard N+1 Genome Query (Issue #97)
+
+This release resolves the N+1 database query pattern in the dashboard groups endpoint that was first documented as a known issue in v1.2.15.
+
+#### Fix: Replace N+1 `db.get_genome()` Loop with Single Batch Query (#97)
+
+`dashboard.py` `_get_groups()` previously called `db.get_genome(jid)` once per registered group inside a loop. With N groups, every dashboard refresh (every 5 seconds) issued N+1 database queries — one to fetch all groups, then one per group to fetch its genome row.
+
+The fix introduces `db.get_all_genomes()` which fetches all genome rows in a single `SELECT` query and returns them as a `dict` keyed by `group_jid`. `_get_groups()` now calls `db.get_all_genomes()` once before the loop and uses `.get(jid, default)` to look up each group's genome in O(1). Total queries per dashboard refresh: 2 (groups + genomes), regardless of group count.
+
+#### Added: `db.get_all_genomes()`
+
+New function in `db.py` returning `dict[str, dict]` — all genome rows in one SELECT, keyed by `group_jid`. Includes all genome fields: `response_style`, `formality`, `technical_depth`, `fitness_score`.
+
+#### Upgrade
+
+```bash
+git pull
+# Host-only change — no Docker image rebuild required
+# No DB schema change
+python run.py start
+```
+
+---
+
 ## v1.2.15 — 2026-03-12
 
 ### Security, Reliability, and Performance Fixes (Ninth Round)
