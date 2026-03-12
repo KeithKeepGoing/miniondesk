@@ -2,6 +2,43 @@
 
 ---
 
+## v1.2.18 — 2026-03-12
+
+### Security, Reliability, and Correctness Fixes (Eleventh Round)
+
+This release addresses 5 issues spanning IPC input validation, scheduler memory safety, dashboard thread safety, and immune system clock correctness. No new features; all changes are fixes and hardening.
+
+#### Fix: IPC File Size Guard Before JSON Parse (#110)
+
+`watch_ipc()` previously called `f.read_text()` on every `.json` file in the IPC directory before checking its size. A container writing a file larger than 1 MB (whether runaway or malicious) would cause the entire file to be buffered in memory before `json.loads()` was attempted. The fix adds a `_MAX_IPC_FILE_SIZE = 1 MB` constant and a `f.stat().st_size` check before reading. Files exceeding the limit are logged as a WARNING, deleted, and skipped via `continue`. An `OSError` on the stat call (file deleted between listing and stat) is caught and skipped silently.
+
+#### Fix: `scheduler.py` `_in_flight` Stale Entry Leak (#111)
+
+`_in_flight` is a set of task IDs currently being dispatched, used to prevent double-firing on short-interval tasks. If a task's `asyncio.Task` done callback was never called (e.g. due to a bug or event loop teardown), the task ID would remain in `_in_flight` forever, permanently blocking that task from re-firing. The fix adds `_in_flight_since: dict[str, float]` tracking `time.monotonic()` when each task was added. The existing 100-cycle maintenance block now also prunes entries older than `_IN_FLIGHT_MAX_AGE = 3600.0` seconds with a WARNING log.
+
+#### Fix: `dashboard.py` `_log_buffer` Slice Under Lock (#112)
+
+The `/api/logs` endpoint's `list(_log_buffer[-100:])` slice was already wrapped with `_log_lock`, and the `emit()` function in `_QueueHandler` also acquires `_log_lock` before appending. Both read and write paths are correctly protected. No code change required; documented here for completeness.
+
+#### Fix: `ipc.py` Web Search `request_id` Validation (#113)
+
+The `web_search` IPC handler used `request_id` directly from the container-controlled payload to construct a filename (`ws_result_{request_id}.json`) in the group's `.ipc` directory. A `request_id` containing `../` or other path components could escape the intended directory. The fix adds `_REQUEST_ID_RE = re.compile(r'^[a-zA-Z0-9_\-]{4,64}$')` and validates `request_id` before constructing the file path; invalid values are rejected with a WARNING and the handler returns early.
+
+#### Fix: `immune.py` Rate Window Uses Monotonic Clock (#114)
+
+The sliding-window rate limiter in `is_allowed()` stored `time.time()` (wall-clock) timestamps in `_sender_timestamps` and compared against a new `time.time()` call. A positive NTP adjustment (clock jump forward) could cause the window to appear expired prematurely, allowing bursts. A negative adjustment (clock jump back) could make recent messages appear old, resetting the counter. The fix changes the in-memory window to use `time.monotonic()` throughout: both recording (`fresh.append(now_mono)`) and pruning (`now_mono - t < 60`). `_sender_timestamps` is entirely in-memory and not persisted, so this change is safe. The DB `last_seen` column in `immune_threats` continues to use `int(time.time())` (wall-clock) as before.
+
+#### Upgrade
+
+```bash
+git pull
+# Host-only changes — no Docker image rebuild required
+# No DB schema change
+python run.py start
+```
+
+---
+
 ## v1.2.17 — 2026-03-12
 
 ### Memory Leak, Orphan Cleanup, and Security Fixes (Tenth Round)

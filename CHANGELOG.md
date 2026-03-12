@@ -4,6 +4,20 @@ All notable changes to MinionDesk will be documented in this file.
 
 ---
 
+## [1.2.18] - 2026-03-12
+
+### Fixed
+- **#110** `ipc.py`: Added `_MAX_IPC_FILE_SIZE = 1 MB` constant; IPC files exceeding the limit are skipped with a WARNING and deleted rather than read into memory — prevents OOM from oversized IPC payloads written by a runaway or malicious container
+- **#111** `scheduler.py`: Added `_in_flight_since` dict to track when each task was added to `_in_flight`; periodic cleanup (every 100 cycles) removes entries older than 1 hour with a WARNING log — prevents `_in_flight` leaking tasks that never completed due to a lost done callback
+- **#112** `dashboard.py`: Verified `_log_buffer[-100:]` slice in `/api/logs` endpoint is wrapped with `_log_lock`; emit() already uses the lock — no race condition on concurrent reads and writes to the log buffer
+- **#113** `ipc.py`: Added `_REQUEST_ID_RE = re.compile(r'^[a-zA-Z0-9_\-]{4,64}$')`; `web_search` IPC handler validates `request_id` against this pattern before constructing the result file path — prevents path traversal or filesystem manipulation via a crafted `request_id` value
+- **#114** `immune.py`: Sliding window rate limiter in `is_allowed()` now uses `time.monotonic()` instead of `time.time()` for the in-memory `_sender_timestamps` list — NTP clock adjustments and DST transitions no longer cause incorrect rate-limit window calculations; DB `last_seen` column continues to use wall-clock time
+
+### Chore
+- Version bump 1.2.17 → 1.2.18
+
+---
+
 ## [1.2.17] - 2026-03-12
 
 ### Fixed
