@@ -4,6 +4,19 @@ All notable changes to MinionDesk will be documented in this file.
 
 ---
 
+## [1.2.12] - 2026-03-12
+
+### Changed
+- 升級 container Dockerfile 基礎鏡像至 python:3.9（Debian Bullseye 完整版，含 gcc、make、libffi、zlib 工具鏈）
+- 預裝中文字體：fonts-wqy-zenhei、fonts-wqy-microhei + fc-cache
+- 預裝系統依賴：libfreetype6、libpng16-16、zlib1g
+- 預裝 python-pptx==1.0.2 進鏡像，消除 runtime pip 網路依賴
+- 新增 ENV LANG=C.UTF-8 確保輸出編碼正確
+
+### Fixed
+- 生成含中文內容 PPT/PDF 時字元顯示為方塊的問題
+- PyPI 網路不穩定時 python-pptx 安裝失敗導致技能崩潰的問題
+
 ## [1.2.11] - 2026-03-12
 
 ### Reliability, Memory, and Usability Fixes (Eighth Round)
