@@ -351,11 +351,25 @@ def kb_search(query: str, limit: int = 5, dept: str = "") -> list[dict]:
 
 # ─── Evolution runs ───────────────────────────────────────────────────────────
 
+_EVOLUTION_RUNS_MAX_PER_GROUP = 200   # keep only the most recent N rows per group
+_EVOLUTION_LOG_MAX_PER_GROUP = 100    # keep only the most recent N evolution log entries
+
+
 def record_evolution_run(group_jid: str, success: bool, response_ms: int) -> None:
     conn = _conn()
     conn.execute(
         "INSERT INTO evolution_runs(group_jid, success, response_ms) VALUES(?,?,?)",
         (group_jid, int(success), response_ms),
+    )
+    # Prune old rows to prevent unbounded table growth.
+    # Keep only the most recent _EVOLUTION_RUNS_MAX_PER_GROUP rows per group.
+    conn.execute(
+        """DELETE FROM evolution_runs
+           WHERE group_jid=? AND id NOT IN (
+               SELECT id FROM evolution_runs
+               WHERE group_jid=? ORDER BY created_at DESC LIMIT ?
+           )""",
+        (group_jid, group_jid, _EVOLUTION_RUNS_MAX_PER_GROUP),
     )
     conn.commit()
 
@@ -384,6 +398,15 @@ def log_evolution(
         (group_jid, generation, fitness, avg_ms,
          _json.dumps(before, ensure_ascii=False),
          _json.dumps(after, ensure_ascii=False)),
+    )
+    # Prune old evolution log entries to prevent unbounded growth
+    conn.execute(
+        """DELETE FROM evolution_log
+           WHERE group_jid=? AND id NOT IN (
+               SELECT id FROM evolution_log
+               WHERE group_jid=? ORDER BY created_at DESC LIMIT ?
+           )""",
+        (group_jid, group_jid, _EVOLUTION_LOG_MAX_PER_GROUP),
     )
     conn.commit()
 

@@ -4,6 +4,22 @@ All notable changes to MinionDesk will be documented in this file.
 
 ---
 
+## [1.2.10] - 2026-03-12
+
+### Reliability, Security, and Resource Management Fixes (Seventh Round)
+
+- `main.py`: Added `return_exceptions=True` to `asyncio.gather()` in `run_host()` — without it, a single unhandled exception in any sub-loop (e.g. `evolution_loop`, `watch_ipc`) immediately cancels all other running coroutines, taking down the entire host; exceptions are now logged per-coroutine (#64)
+- `db.py`: `evolution_runs` and `evolution_log` tables now pruned on every insert — `record_evolution_run()` deletes rows beyond the most recent 200 per group; `log_evolution()` keeps the most recent 100 entries per group; prevents unbounded SQLite file growth on long-running instances (#65)
+- `ipc.py`: `_do_web_search()` now caps the DuckDuckGo HTTP response at 512 KB (`resp.read(512 * 1024)`) to prevent OOM from a runaway or malicious upstream response (#66)
+- `ipc.py`: `_resolve_container_path()` fallback `return p if os.path.exists(p) else None` removed — a container-controlled `send_file` IPC payload with an absolute host path (e.g. `/etc/passwd`) would have caused arbitrary host file exfiltration via Telegram/Discord; unrecognised paths now return `None` with a WARNING log (#67)
+- `main.py`: Added periodic `PRAGMA wal_checkpoint(PASSIVE)` call to the health monitor loop (every 60s) to prevent WAL file growing without bound on busy instances where there are always active readers (#68)
+- `dev_engine.py`: Added `_prune_dev_sessions()` called from `start_dev_session()` — prunes sessions older than 7 days and keeps only the most recent 20 sessions per group, preventing unbounded `dev_sessions` table growth (#69)
+- `config.py`: `validate()` now warns when `MINIONS_DIR` does not exist (silent misconfiguration) and raises a clear `ValueError` when `DATA_DIR` parent is not writable, preventing an unhelpful `PermissionError` at startup with no guidance (#70)
+- `config.py`: Default `CONTAINER_IMAGE` updated to `miniondesk-agent:1.2.10`
+- `miniondesk/__init__.py`: Version bumped to 1.2.10
+
+---
+
 ## [1.2.9] - 2026-03-12
 
 ### Reliability, Correctness, and Functional Fixes (Sixth Round)

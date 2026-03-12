@@ -2,6 +2,42 @@
 
 ---
 
+## v1.2.10 — 2026-03-12
+
+### Reliability, Security, and Resource Management Fixes (Seventh Round)
+
+本次版本修正 7 個在 v1.2.9 後發現的新問題，涵蓋 asyncio.gather 缺少 return_exceptions 導致子協程崩潰拖垮整個 host、evolution 表格無限增長耗盡磁碟、web_search 回應無大小上限造成 OOM、IPC send_file 路徑穿越導致任意 host 檔案外洩、WAL 檔案無界增長、DevEngine 會話永不清理、以及 config.validate() 缺乏 MINIONS_DIR 存在與 DATA_DIR 可寫性檢查。
+
+#### Fix 1: `asyncio.gather()` 缺少 `return_exceptions=True`（#64）
+
+`run_host()` 中的 `asyncio.gather()` 未加 `return_exceptions=True`。任何子協程（如 `evolution_loop`、`watch_ipc`、`run_scheduler`）拋出未處理例外時，gather 會立即取消所有其他執行中的協程，導致整個 host 進程崩潰。改為加入 `return_exceptions=True`，並在 gather 完成後逐一記錄各協程回傳的例外。
+
+#### Fix 2: `evolution_runs` 與 `evolution_log` 表格無限增長（#65）
+
+`record_evolution_run()` 每次訊息都插入一列且從不刪除舊列；`log_evolution()` 同樣無界增長。長期執行的實例每月可累積數十萬列，最終耗盡磁碟空間。改為在每次 insert 後保留最近 200 筆（evolution_runs）及 100 筆（evolution_log）per group，超出部分自動刪除。
+
+#### Fix 3: `_do_web_search()` HTTP 回應無大小上限（#66）
+
+`urllib.request.urlopen(...).read()` 無大小限制，惡意或失控的上游伺服器可回傳數 GB 資料，全部緩衝於記憶體後才解析 JSON，有 OOM 風險。改為 `resp.read(512 * 1024)` 限制最大 512 KB。
+
+#### Fix 4: `_resolve_container_path()` fallback 允許任意 host 路徑（#67）
+
+`_resolve_container_path()` 的 fallback `return p if os.path.exists(p) else None` 會原樣回傳容器控制的絕對路徑（如 `/etc/passwd`、`/home/user/.env`），呼叫端 `route_file()` 會直接將該 host 檔案傳送至 Telegram/Discord 群組，造成任意檔案外洩。已移除此 fallback，無法識別的路徑一律回傳 `None` 並記錄 WARNING。
+
+#### Fix 5: SQLite WAL 檔案無界增長（#68）
+
+MinionDesk 啟用 WAL 模式但從未顯式呼叫 `PRAGMA wal_checkpoint`。只要有活躍的讀取連線（dashboard、IPC watcher 持續運作），SQLite 自動 checkpoint 常無法完整回寫 WAL，導致 `miniondesk.db-wal` 在繁忙實例上持續膨脹。改為在 health monitor loop（每 60 秒）中加入 `PRAGMA wal_checkpoint(PASSIVE)` 促進 WAL 壓縮。
+
+#### Fix 6: DevEngine 會話永不清理（#69）
+
+每次 `dev_task` IPC 訊息都會建立一筆 `dev_sessions` 列，completed/failed/cancelled 會話從不刪除。改為在 `start_dev_session()` 建立新會話前呼叫 `_prune_dev_sessions()`：刪除超過 7 天的舊會話，並只保留每個群組最近 20 筆。
+
+#### Fix 7: `config.validate()` 缺乏 MINIONS_DIR 存在與 DATA_DIR 可寫性檢查（#70）
+
+`MINIONS_DIR` 不存在時 `runner.py` 靜默回退至預設 persona（不報錯，難以察覺配置錯誤）。`DATA_DIR` 父目錄不可寫時只拋出 `PermissionError` 而無明確指引。改為在 `validate()` 中：(1) `MINIONS_DIR` 不存在時記錄 WARNING；(2) `DATA_DIR` 父目錄不可寫時加入 errors list 並拋出 `ValueError` 附帶明確建議。
+
+---
+
 ## v1.2.9 — 2026-03-12
 
 ### Reliability, Correctness, and Functional Fixes (Sixth Round)

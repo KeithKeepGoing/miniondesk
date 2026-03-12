@@ -143,7 +143,7 @@ async def _dispatch_task(group_jid: str, prompt: str) -> None:
 # ─── Health monitor ───────────────────────────────────────────────────────────
 
 async def _health_monitor_loop() -> None:
-    """Log system health stats every 60 seconds."""
+    """Log system health stats every 60 seconds and checkpoint the WAL file."""
     while True:
         try:
             groups = db.get_all_groups()
@@ -152,6 +152,15 @@ async def _health_monitor_loop() -> None:
                 "Health: groups=%d active_tasks=%d",
                 len(groups), active_tasks,
             )
+            # Periodic WAL checkpoint: SQLite WAL files grow without bound when
+            # there are always active readers (which is always true for the dashboard
+            # and IPC loops). Calling PASSIVE checkpoint encourages compaction without
+            # blocking readers or writers.
+            try:
+                conn = db._conn()
+                conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+            except Exception as wal_exc:
+                logger.debug("WAL checkpoint error: %s", wal_exc)
         except Exception as exc:
             # Elevated to WARNING so health errors are visible at default log level
             logger.warning("Health monitor error: %s", exc)
@@ -232,7 +241,10 @@ async def run_host() -> None:
 
     # Run all loops concurrently:
     # 1. IPC watcher  2. Scheduler  3. Evolution  4. Health monitor  5. Orphan cleanup  6. Dashboard  7. Stop event
-    await asyncio.gather(
+    # return_exceptions=True prevents one crashing coroutine from cancelling all others.
+    # Without it, a transient unhandled exception in any sub-loop (e.g. evolution_loop,
+    # watch_ipc) immediately cancels the entire gather — taking down the whole host process.
+    results = await asyncio.gather(
         watch_ipc(route_message, route_file),
         run_scheduler(_dispatch_task),
         evolution_loop(),
@@ -240,7 +252,16 @@ async def run_host() -> None:
         _orphan_cleanup_loop(),
         run_dashboard(),
         stop_event.wait(),
+        return_exceptions=True,
     )
+    # Log any exceptions returned by sub-coroutines for operator visibility
+    coro_names = [
+        "watch_ipc", "run_scheduler", "evolution_loop",
+        "_health_monitor_loop", "_orphan_cleanup_loop", "run_dashboard", "stop_event",
+    ]
+    for name, res in zip(coro_names, results):
+        if isinstance(res, Exception):
+            logger.error("Sub-coroutine '%s' exited with exception: %s", name, res)
 
     # Cleanup
     logger.info("Stopping channels...")

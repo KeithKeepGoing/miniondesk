@@ -43,7 +43,7 @@ KNOWLEDGE_DIR = Path(_env("KNOWLEDGE_DIR", str(BASE_DIR / "knowledge")))
 DB_PATH    = DATA_DIR / "miniondesk.db"
 
 # Docker
-CONTAINER_IMAGE   = _env("CONTAINER_IMAGE", "miniondesk-agent:1.2.9")
+CONTAINER_IMAGE   = _env("CONTAINER_IMAGE", "miniondesk-agent:1.2.10")
 CONTAINER_TIMEOUT = _int_env("CONTAINER_TIMEOUT", 300)
 CONTAINER_MAX_FAILS = _int_env("CONTAINER_MAX_FAILS", 5)
 CONTAINER_FAIL_COOLDOWN = _float_env("CONTAINER_FAIL_COOLDOWN", 60.0)
@@ -125,6 +125,25 @@ def validate() -> None:
         errors.append(f"QUEUE_MAX_PER_GROUP must be > 0, got {QUEUE_MAX_PER_GROUP}")
     if MAX_PROMPT_LENGTH <= 0:
         errors.append(f"MAX_PROMPT_LENGTH must be > 0, got {MAX_PROMPT_LENGTH}")
+
+    # Directory existence / writability checks
+    if not MINIONS_DIR.exists():
+        logger.warning(
+            "Config: MINIONS_DIR=%s does not exist. "
+            "Minion personas will fall back to the default 'helpful assistant' prompt.",
+            MINIONS_DIR,
+        )
+
+    # Check that DATA_DIR parent is writable so the DB file can be created.
+    # A read-only BASE_DIR (e.g., Docker image layer without a volume) produces a
+    # PermissionError with no user-friendly guidance — surface it here instead.
+    data_parent = DATA_DIR.parent
+    import os as _os
+    if data_parent.exists() and not _os.access(str(data_parent), _os.W_OK):
+        errors.append(
+            f"DATA_DIR parent '{data_parent}' is not writable. "
+            "Mount a writable volume or set DATA_DIR to a writable path."
+        )
 
     if errors:
         for e in errors:
