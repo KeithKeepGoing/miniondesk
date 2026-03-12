@@ -4,6 +4,31 @@ All notable changes to MinionDesk will be documented in this file.
 
 ---
 
+## [1.2.15] - 2026-03-12
+
+### Security
+
+- `config.py`: FATAL error on startup if `DASHBOARD_PASSWORD='changeme'` and `DASHBOARD_HOST` is not `'127.0.0.1'` — deploying with the default password on a non-loopback interface is now a hard startup failure; a WARNING is also emitted when the password is shorter than 8 characters (#93)
+- `runner.py`: `group_folder` validated with regex `r'^[\w\-]+$'` before use in Docker mount paths — prevents path traversal via malicious group folder values stored in the DB (#99)
+
+### Fixed
+
+- `db.py`: Added missing index `idx_tasks_status` on `tasks.status` — eliminates a full table scan on every scheduler tick, significantly reducing DB load on busy instances (#94)
+- `evolution.py`: `response_ms` is now clamped to `[0, 600_000]` ms before fitness calculation — prevents garbage fitness scores caused by integer overflow or negative values from misbehaving containers (#95)
+- `scheduler.py`: Exponential backoff on task failure — retry delay is `min(10 × 2^N, 3600)` seconds — prevents LLM API spam and rate-limit exhaustion on repeated task failures (#96)
+- `dashboard.py`: SSE fan-out loop now iterates over a snapshot copy of `_sse_subscribers` and removes stale/dead queues inline — prevents memory leak when clients disconnect without triggering `BrokenPipeError` (#98)
+- `immune.py`: Unified timestamp source — all immune subsystem code now uses Python `int(time.time())` instead of SQLite `strftime('%s','now')` — eliminates clock skew between host and DB causing incorrect rate-limit window calculations (#100)
+
+### Known Issues / Tracked
+
+- `dashboard.py`: N+1 genome query in the groups endpoint is a known architectural issue; tracked in #97 for a future batched-query fix
+
+### Chore
+
+- `miniondesk/__init__.py`: Version bumped to 1.2.15
+
+---
+
 ## [1.2.14] - 2026-03-12
 
 ### Chore

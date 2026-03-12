@@ -2,6 +2,55 @@
 
 ---
 
+## v1.2.15 — 2026-03-12
+
+### Security, Reliability, and Performance Fixes (Ninth Round)
+
+This release addresses 8 issues spanning security hardening, scheduler stability, memory leak prevention, and timestamp correctness. No new features; all changes are fixes and hardening.
+
+#### Security: Startup Fatal on Weak Dashboard Password in Production (#93)
+
+`config.py` now raises a fatal error at startup if `DASHBOARD_PASSWORD` is set to the default value `'changeme'` and `DASHBOARD_HOST` is anything other than `'127.0.0.1'`. Exposing the dashboard on a network interface with a known-default password is a critical misconfiguration. A WARNING is additionally logged whenever the password is shorter than 8 characters, regardless of host binding.
+
+#### Security: `group_folder` Path Traversal Prevention (#99)
+
+`runner.py` now validates `group_folder` against the regex `r'^[\w\-]+$'` before using it to construct Docker volume mount paths. A maliciously crafted group folder value (e.g. containing `../`) stored in the database could previously escape the intended mount prefix and expose arbitrary host directories to the container.
+
+#### Fix: Missing Index on `tasks.status` (#94)
+
+`db.py` now creates index `idx_tasks_status` on the `tasks.status` column. Without this index, every scheduler tick performed a full table scan of the `tasks` table to find pending/due tasks. On deployments with many tasks, this caused measurable latency on the scheduler loop and elevated SQLite CPU usage.
+
+#### Fix: `response_ms` Clamped Before Fitness Calculation (#95)
+
+`evolution.py` now clamps `response_ms` to `[0, 600_000]` milliseconds before passing it to `calculate_fitness()`. Integer overflow from very long-running containers or negative values from clock skew could previously produce NaN or out-of-range fitness scores, corrupting the genome and causing undefined evolution behaviour.
+
+#### Fix: Exponential Backoff on Task Failure (#96)
+
+`scheduler.py` now applies exponential backoff to task retry delays after a failure: `min(10 × 2^N, 3600)` seconds, capped at 1 hour. Previously, failed tasks were re-queued at their normal schedule interval, causing rapid repeated LLM calls on transient failures and risking API rate-limit exhaustion.
+
+#### Fix: SSE Fan-out Memory Leak on Client Disconnect (#98)
+
+`dashboard.py` SSE fan-out loop now iterates over a snapshot copy of `_sse_subscribers` and removes dead/stale subscriber queues within the same pass. Previously, clients that disconnected without triggering a `BrokenPipeError` (e.g. proxies that silently drop connections) were never removed, causing unbounded growth of the subscriber set and their associated queues.
+
+#### Fix: Unified Timestamp Source in immune.py (#100)
+
+`immune.py` now uses Python `int(time.time())` exclusively for all timestamp comparisons and insertions. Previously, some code paths used SQLite `strftime('%s','now')` while others used Python's `time.time()`. On systems where the SQLite and Python clocks differ slightly (e.g. different timezone handling), this caused incorrect rate-limit window calculations — senders could be blocked too early or not blocked when they should be.
+
+#### Known Issue / Tracked: N+1 Genome Query in Dashboard (#97)
+
+The groups dashboard endpoint issues one genome query per group (N+1 pattern). This is a known architectural issue tracked in #97. A batched single-query fix is planned for a future release. No code change in this release.
+
+#### Upgrade
+
+```bash
+git pull
+# Host-only changes — no Docker image rebuild required
+# DB schema change: idx_tasks_status index is added automatically on next startup
+python run.py start
+```
+
+---
+
 ## v1.2.14 — 2026-03-12
 
 ### Version Bump: Align pyproject.toml with Production Releases
