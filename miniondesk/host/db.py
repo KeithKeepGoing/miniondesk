@@ -206,6 +206,10 @@ def add_message(group_jid: str, role: str, content: str) -> None:
 
 
 def get_history(group_jid: str, limit: int = 20) -> list[dict]:
+    # Validate that the group_jid belongs to a registered group before returning
+    # any history rows, preventing cross-group data leakage via unvalidated JIDs.
+    if not group_jid or not get_group(group_jid):
+        return []
     rows = _conn().execute(
         "SELECT role, content FROM messages WHERE group_jid=? ORDER BY created_at DESC LIMIT ?",
         (group_jid, limit),
@@ -409,7 +413,7 @@ def kb_search(query: str, limit: int = 5, dept: str = "") -> list[dict]:
 
 # ─── Evolution runs ───────────────────────────────────────────────────────────
 
-_EVOLUTION_RUNS_MAX_PER_GROUP = 200   # keep only the most recent N rows per group
+_EVOLUTION_RUNS_MAX_PER_GROUP = 1000  # keep only the most recent N rows per group
 _EVOLUTION_LOG_MAX_PER_GROUP = 100    # keep only the most recent N evolution log entries
 
 

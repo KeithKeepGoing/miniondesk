@@ -2,6 +2,51 @@
 
 ---
 
+## v1.2.20 — 2026-03-12
+
+### Memory System and Evolution System Root Cause Fixes (Issues #124–#125)
+
+This release addresses 7 root-cause bugs across the conversation memory system and the genome evolution system. No new features; all changes are correctness and quality fixes.
+
+#### Fix: History Window Too Small (#124)
+
+`runner.py` called `db.get_history(group_jid, limit=20)`, providing only 20 messages (~10 conversation turns) as context to the container agent. For longer conversations the agent would lose early context. Raised to `limit=50` (~25 turns), doubling effective memory depth with negligible DB overhead given SQLite's indexed retrieval.
+
+#### Fix: Race Condition — Reply Stored After Send (#124)
+
+`_run_and_reply()` in `main.py` called `route_message()` to send the assistant reply to the channel *before* calling `db.add_message()` to persist it. If the process crashed between the two calls, the reply was delivered to the user but never recorded in history — causing the next conversation turn to be missing its predecessor. Fixed by reordering: `db.add_message()` is now called first, then `route_message()`.
+
+#### Fix: Scheduled Tasks Not Stored in History (#124)
+
+`_dispatch_task()` dispatched the scheduled task prompt to `_run_and_reply()` without storing the prompt as a `user` message. Scheduled task outputs appeared in the channel but the task prompt and its reply were invisible to future history lookups. Fixed by adding `db.add_message(group_jid, "user", prompt)` in `_dispatch_task()` before dispatch; the reply is stored by the existing `_run_and_reply()` path.
+
+#### Fix: `get_history()` Missing Group Validation (#124)
+
+`db.get_history()` accepted any `group_jid` string and returned rows from the `messages` table without verifying the JID corresponds to a registered group. A caller passing an unregistered or spoofed JID could retrieve messages from that JID if any happened to exist. Fixed by calling `get_group(group_jid)` first and returning an empty list for unregistered JIDs.
+
+#### Fix: `calculate_fitness()` Only Measures Speed (#125)
+
+`calculate_fitness(success, response_ms)` mapped a single interaction to a scalar score based purely on whether it succeeded and how fast it responded. An agent that always responded in 3 seconds but produced empty one-word replies scored identically to one that produced rich, detailed answers. The function has been redesigned as `calculate_fitness(runs: list[dict])` — it now operates on a batch of runs and computes four signals: success rate (40%), speed score (30%), improvement trend comparing recent vs older runs (20%), and response time consistency (10%). This produces a fitness score that meaningfully differentiates agents that are improving from those that are stagnating.
+
+#### Fix: Evolution History Pruned Too Aggressively (#125)
+
+`_EVOLUTION_RUNS_MAX_PER_GROUP = 200` meant the DB retained at most 200 runs per group before pruning older rows. With the new trend analysis in `calculate_fitness()` (which compares the last 10 runs to the prior 10), only 20 rows are needed for the core calculation — but longer retention provides better historical visibility and more stable trend signals. Raised to 1000 rows per group. At ~50 bytes per row, 1000 rows = ~50 KB per group, which is negligible.
+
+#### Fix: `MIN_RUNS_FOR_EVOLUTION = 3` Prevents Early Learning (#125)
+
+With `MIN_RUNS_FOR_EVOLUTION = 3` and a 300-second evolution poll interval, a brand-new group could go through its first few interactions without any genome adaptation. Lowered to 1 — genome evolution now triggers after the very first run, allowing the system to start adapting immediately.
+
+#### Upgrade
+
+```bash
+git pull
+# Host-only changes — no Docker image rebuild required
+# No DB schema change
+python run.py start
+```
+
+---
+
 ## v1.2.19 — 2026-03-12
 
 ### Shutdown Reliability, Concurrency, and Security Fixes (Issues #116–#121)

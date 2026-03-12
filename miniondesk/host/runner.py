@@ -136,7 +136,7 @@ async def run_minion(
     # Load conversation history
     conv_history = []
     try:
-        raw_history = db.get_history(group_jid, limit=20)
+        raw_history = db.get_history(group_jid, limit=50)
         for h in raw_history:
             role = h.get("role", "user")
             content = str(h.get("content", "")).strip()

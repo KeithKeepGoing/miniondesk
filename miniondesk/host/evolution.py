@@ -11,22 +11,67 @@ STYLE_ORDER = ["concise", "balanced", "detailed"]
 FORMALITY_STEP = 0.05
 DEPTH_STEP = 0.05
 EVOLUTION_INTERVAL = 300  # Evolve every 5 minutes
-MIN_RUNS_FOR_EVOLUTION = 3  # Need at least 3 data points
+MIN_RUNS_FOR_EVOLUTION = 1  # Allow evolution from the very first run
 
 
-def calculate_fitness(success: bool, response_ms: int) -> float:
+def calculate_fitness(runs: list[dict]) -> float:
     """
-    Calculate fitness score (0.0-1.0) for a single interaction.
-    Success = 0.7 base; penalize slow responses.
+    Calculate aggregate fitness score (0.0-1.0) from a list of recent runs.
+
+    Uses multiple signals weighted to produce a meaningful fitness value:
+      - Success rate        (40%) — ratio of successful runs
+      - Speed score         (30%) — normalised inverse of avg response time
+      - Trend bonus         (20%) — recent 10 runs vs prior 10 runs success delta
+      - Consistency score   (10%) — low variance in response time is rewarded
+
+    The evolution_runs table stores only {success, response_ms}, so fitness
+    is derived purely from those two columns, but across multiple signals.
     """
-    if not success:
-        return 0.1
-    # Clamp to sane bounds (0 ms to 10 minutes)
-    response_ms = max(0, min(response_ms, 600_000))
-    # Time penalty: ideal < 5s, bad > 20s
-    time_score = max(0.0, 1.0 - (response_ms - 5000) / 15000)
-    time_score = min(1.0, time_score)
-    return 0.4 + 0.6 * time_score
+    if not runs:
+        return 0.5
+
+    recent = runs[-20:]  # use last 20 runs for the main calculation
+
+    # ── success rate (weight 40%) ──────────────────────────────────────────
+    success_rate = sum(1 for r in recent if r.get("success")) / len(recent)
+
+    # ── speed score (weight 30%) — lower ms = higher score ────────────────
+    avg_ms = sum(r.get("response_ms", 5000) for r in recent) / len(recent)
+    # Clamp to sane bounds before scoring
+    avg_ms = max(0, min(avg_ms, 600_000))
+    # Ideal < 5s → 1.0; at 30s → 0.0; linear between
+    speed_score = max(0.0, min(1.0, 1.0 - (avg_ms - 5000) / 25000))
+
+    # ── trend bonus (weight 20%) — are we improving? ───────────────────────
+    trend_score = 0.5  # neutral default
+    if len(runs) >= 20:
+        older = runs[-20:-10]
+        newer = runs[-10:]
+        if older and newer:
+            older_success = sum(1 for r in older if r.get("success")) / len(older)
+            newer_success = sum(1 for r in newer if r.get("success")) / len(newer)
+            # Map delta [-1, +1] to score [0, 1]
+            delta = newer_success - older_success
+            trend_score = max(0.0, min(1.0, 0.5 + delta))
+
+    # ── consistency score (weight 10%) — low variance is better ───────────
+    if len(recent) >= 2:
+        mean_ms = avg_ms
+        variance = sum((r.get("response_ms", mean_ms) - mean_ms) ** 2 for r in recent) / len(recent)
+        std_ms = variance ** 0.5
+        # Coefficient of variation: std/mean; low CV = consistent = good
+        cv = (std_ms / mean_ms) if mean_ms > 0 else 1.0
+        consistency_score = max(0.0, min(1.0, 1.0 - cv / 2.0))
+    else:
+        consistency_score = 0.5
+
+    fitness = (
+        success_rate   * 0.4
+        + speed_score  * 0.3
+        + trend_score  * 0.2
+        + consistency_score * 0.1
+    )
+    return round(fitness, 4)
 
 
 def evolve_genome(group_jid: str) -> dict | None:
@@ -38,9 +83,8 @@ def evolve_genome(group_jid: str) -> dict | None:
     if len(runs) < MIN_RUNS_FOR_EVOLUTION:
         return None
 
-    # Calculate metrics
-    fitness_scores = [calculate_fitness(bool(r["success"]), r["response_ms"]) for r in runs]
-    avg_fitness = sum(fitness_scores) / len(fitness_scores)
+    # Calculate multi-signal fitness and response time average
+    avg_fitness = calculate_fitness(runs)
     avg_ms = sum(r["response_ms"] for r in runs) / len(runs)
 
     genome = db.get_genome(group_jid)

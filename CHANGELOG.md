@@ -4,6 +4,22 @@ All notable changes to MinionDesk will be documented in this file.
 
 ---
 
+## [1.2.20] — 2026-03-12
+
+### Fixed
+- **#124** `runner.py`: history limit raised from 20 to 50 messages — doubles effective conversation context from ~10 turns to ~25 turns, allowing minions to reference earlier parts of longer conversations
+- **#124** `main.py`: assistant reply stored to history *before* `route_message()` send — eliminates the race condition where a crash between send and store caused the reply to be lost from conversation history
+- **#124** `main.py` `_dispatch_task()`: scheduled task prompt now stored as a `user` message before dispatch, ensuring the full task context appears in history and the minion has continuity across scheduled runs
+- **#124** `db.py` `get_history()`: added `group_jid` validation against the registered groups table — unregistered or empty JIDs now return an empty list instead of potentially leaking cross-group message data
+- **#125** `evolution.py` `calculate_fitness()`: refactored from a per-run scalar to a multi-signal aggregate function over a list of runs; now weights success rate (40%), speed score (30%), improvement trend (20%), and response consistency (10%) — fitness signal is meaningfully correlated with actual agent quality
+- **#125** `db.py`: `_EVOLUTION_RUNS_MAX_PER_GROUP` raised from 200 to 1000 — retains enough historical data for trend analysis in `calculate_fitness()` without unbounded growth
+- **#125** `evolution.py`: `MIN_RUNS_FOR_EVOLUTION` lowered from 3 to 1 — allows fitness calculation and genome evolution from the very first run, eliminating the dead zone where new groups receive no adaptation
+
+### Chore
+- Version bump 1.2.19 → 1.2.20
+
+---
+
 ## [1.2.19] - 2026-03-12
 
 ### Fixed
