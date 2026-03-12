@@ -587,8 +587,15 @@ class _Handler(BaseHTTPRequestHandler):
 
 # ─── Dashboard server ─────────────────────────────────────────────────────────
 
+# Fix #119: store the HTTPServer instance so run_dashboard() can call server.shutdown()
+# on exit, preventing the coroutine from hanging in "while t.is_alive()" indefinitely.
+_dashboard_server: "HTTPServer | None" = None
+
+
 def _run_server(host: str, port: int) -> None:
+    global _dashboard_server
     server = HTTPServer((host, port), _Handler)
+    _dashboard_server = server
     logger.info("Dashboard running at http://%s:%d", host, port)
     server.serve_forever()
 
@@ -614,6 +621,18 @@ async def run_dashboard() -> None:
     )
     t.start()
     logger.info("Dashboard thread started: http://%s:%d", host, port)
-    # Keep coroutine alive (thread is daemon)
-    while t.is_alive():
-        await asyncio.sleep(5)
+    # Keep coroutine alive until stop_event or task cancellation
+    try:
+        while t.is_alive():
+            await asyncio.sleep(0.5)
+    except asyncio.CancelledError:
+        # Fix #119: on CancelledError (shutdown), call server.shutdown() so the thread exits
+        # promptly rather than hanging until the process is killed.
+        global _dashboard_server
+        if _dashboard_server is not None:
+            try:
+                _dashboard_server.shutdown()
+            except Exception:
+                pass
+        t.join(timeout=3)
+        raise

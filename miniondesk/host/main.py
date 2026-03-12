@@ -281,8 +281,17 @@ async def run_host() -> None:
         "_health_monitor_loop", "_orphan_cleanup_loop", "run_dashboard", "stop_event",
     ]
     for name, res in zip(coro_names, results):
-        if isinstance(res, Exception):
+        if isinstance(res, Exception) and not isinstance(res, asyncio.CancelledError):
             logger.error("Sub-coroutine '%s' exited with exception: %s", name, res)
+
+    # Fix #116: explicitly cancel all still-running asyncio tasks so any coroutines
+    # sleeping in asyncio.sleep() (health monitor 60s, orphan cleanup 300s) exit
+    # immediately rather than blocking shutdown until their next wake cycle.
+    pending = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+    for task in pending:
+        task.cancel()
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
 
     # Cleanup
     logger.info("Stopping group queues...")
