@@ -4,6 +4,31 @@ All notable changes to MinionDesk will be documented in this file.
 
 ---
 
+## [1.2.13] - 2026-03-12
+
+### Docker: Production-Ready Image with Full Tool-Use and MCP Support
+
+#### Added
+- Upgraded base image from `python:3.9` to `python:3.11` for performance gains and long-term support (#89)
+- Node.js 20 LTS via NodeSource — enables MCP (Model Context Protocol) stdio/HTTP servers as subprocesses (#82)
+- Web scraping stack: `requests`, `aiohttp`, `httpx`, `beautifulsoup4`, `lxml`, `html5lib` (#83)
+- Document generation stack: `reportlab` (PDF), `openpyxl` (Excel), `python-docx` (Word) alongside existing `python-pptx` (#84)
+- Image processing: `Pillow`, `opencv-python-headless`, `pytesseract` (#85)
+- Data science stack: `pandas`, `numpy`, `matplotlib`, `seaborn`, `scipy` with `MPLBACKEND=Agg` for headless chart generation (#86)
+- `fonts-noto-cjk` for complete Traditional Chinese / Japanese / Korean character coverage (#87)
+- Utility tools: `ffmpeg`, `tesseract-ocr` (with CJK language packs), `jq`, `unzip`, `zip`, `wget` (#88)
+- Build toolchain: `build-essential`, `gcc`, `libffi-dev`, `libssl-dev`, `pkg-config` so native Python packages compile inside the container (#90)
+- Cairo + Pango system libraries for high-quality PDF rendering with CJK text
+- `ENV LC_ALL=C.UTF-8` and `ENV MPLBACKEND=Agg` for correct locale and headless plotting
+- General utilities pre-installed: `python-dateutil`, `pytz`, `python-dotenv`, `tenacity`, `tqdm`
+
+#### Changed
+- All system packages consolidated into a single `apt-get` layer for minimal image size
+- `requirements.txt` cleaned up — packages now pre-installed in Dockerfile are removed from runtime requirements
+- Container continues to run as non-root `minion` user (uid 1000)
+
+---
+
 ## [1.2.12] - 2026-03-12
 
 ### Changed

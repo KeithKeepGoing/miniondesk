@@ -2,6 +2,73 @@
 
 ---
 
+## v1.2.13 — 2026-03-12
+
+### Docker: Production-Ready Agent Container with MCP, Document, and Data Science Support
+
+This release transforms the MinionDesk agent container from a minimal Python runtime into a fully-equipped AI agent platform capable of handling all current and anticipated future tool-use scenarios — without any runtime `pip install` calls.
+
+#### Why This Matters
+
+Agents use the `Bash` tool to run arbitrary shell commands. Previously, skills that needed `pandas`, `requests`, or `reportlab` would `pip install` at task time — slow (30+ seconds), fragile (PyPI outages), and a network security concern. Now all commonly-needed packages are baked into the image.
+
+#### What's New
+
+*Base Image*
+- Upgraded from `python:3.9` to `python:3.11` — 10-60% faster execution, better error messages, active support until 2027
+
+*Node.js 20 LTS — MCP Server Support* (#82)
+- MCP (Model Context Protocol) servers are commonly Node.js processes. The container can now spawn and communicate with MCP stdio/HTTP servers as subprocesses via the `Bash` tool.
+
+*Web Scraping Stack* (#83)
+- `requests`, `aiohttp`, `httpx` — sync and async HTTP clients
+- `beautifulsoup4`, `lxml`, `html5lib` — HTML/XML parsing
+- Agents can scrape web pages, call APIs, and process HTML without runtime installs
+
+*Document Generation Stack* (#84)
+- `reportlab` — PDF generation with full Unicode and CJK support
+- `openpyxl` — Excel .xlsx read/write
+- `python-docx` — Word .docx read/write
+- `python-pptx 1.0.2` — PowerPoint (already present, retained)
+
+*Image Processing* (#85)
+- `Pillow` — image resize, crop, annotate, format conversion
+- `opencv-python-headless` — computer vision without GUI deps
+- `pytesseract` + `tesseract-ocr` with CJK language packs — OCR for Chinese/Japanese/Korean text in images
+
+*Data Science & Visualisation* (#86)
+- `pandas`, `numpy`, `scipy` — data analysis and numerical computing
+- `matplotlib`, `seaborn` — chart generation (headless via `MPLBACKEND=Agg`)
+- Agents can analyse CSV/Excel data and produce charts to send via `send_file`
+
+*CJK Fonts — Complete Coverage* (#87)
+- Added `fonts-noto-cjk` alongside existing WQY fonts
+- Traditional Chinese, Japanese Kanji, and Korean Hangul all render correctly in all document types
+
+*Utility Tools* (#88)
+- `ffmpeg` — audio/video processing
+- `tesseract-ocr` with Simplified Chinese, Traditional Chinese, Japanese, Korean packs
+- `jq`, `unzip`, `zip`, `wget` — common shell utilities
+
+*Build Toolchain* (#90)
+- `build-essential`, `gcc`, `libffi-dev`, `libssl-dev`, `pkg-config` pre-installed
+- Native Python packages (cryptography, psycopg2, etc.) compile inside the container for dynamic tool installs
+
+#### Security
+
+Container continues to run as non-root `minion` user (uid 1000). No capabilities added.
+
+#### Upgrade
+
+```bash
+git pull
+docker build -t miniondesk-agent:1.2.13 -f container/Dockerfile .
+```
+
+Update `CONTAINER_IMAGE=miniondesk-agent:1.2.13` in your `.env`.
+
+---
+
 ## v1.2.12 — 2026-03-12
 
 ### Docker: Upgrade Agent Container with CJK Fonts and Pre-installed python-pptx

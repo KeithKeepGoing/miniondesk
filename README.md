@@ -2,7 +2,7 @@
 
 **企業 AI 助理框架** — 由 **Mini** 領軍的小小兵團隊，Docker 隔離，模型無關，資料完全自架。
 
-> *目前版本：v1.2.12*
+> *目前版本：v1.2.13*
 
 ```
 主助理 Mini + 部門小小兵（Kevin/Stuart/Bob）
@@ -42,6 +42,26 @@ python run.py check
 # 5. 啟動
 python run.py start
 ```
+
+---
+
+## Docker Container Capabilities (v1.2.13)
+
+The agent container is production-ready with a full tool-use stack pre-installed:
+
+| Category | Included |
+|----------|---------|
+| Base | Python 3.11, Node.js 20 LTS (for MCP servers) |
+| Document generation | python-pptx, reportlab (PDF), openpyxl (Excel), python-docx (Word) |
+| Web scraping | requests, aiohttp, httpx, beautifulsoup4, lxml, html5lib |
+| Image processing | Pillow, opencv-python-headless, pytesseract |
+| Data science | pandas, numpy, matplotlib, seaborn, scipy |
+| CJK fonts | fonts-wqy-zenhei, fonts-wqy-microhei, fonts-noto-cjk |
+| OCR | tesseract-ocr with Simplified/Traditional Chinese, Japanese, Korean |
+| Media | ffmpeg |
+| Utilities | jq, unzip, zip, wget, curl, git |
+| Build tools | build-essential, gcc, libffi-dev, libssl-dev |
+| Security | Runs as non-root `minion` user (uid 1000) |
 
 ---
 
