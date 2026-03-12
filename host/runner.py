@@ -12,6 +12,7 @@ from typing import Optional
 
 from . import config, db
 from .logger import get_logger
+from .memory import get_hot_memory, update_hot_memory
 _log = get_logger("runner")
 
 _MINION_NAME_RE = re.compile(r'^[a-zA-Z0-9_\-]+$')
@@ -43,8 +44,8 @@ async def run_container(
         persona_path = config.MINIONS_DIR / "phil.md"
     persona_md = persona_path.read_text(encoding="utf-8")
 
-    # Load conversation history (last 10 messages)
-    history = db.get_conversation_history(chat_jid, limit=10)
+    # Load conversation history (last 50 messages)
+    history = db.get_conversation_history(chat_jid, limit=50)
     history_text = ""
     if history:
         lines = []
@@ -52,6 +53,9 @@ async def run_container(
             role = "User" if msg["role"] == "user" else "Assistant"
             lines.append(f"[{msg['ts'][:16]}] {role}: {msg['content'][:200]}")
         history_text = "\n".join(lines)
+
+    # Load hot memory
+    hot_memory = get_hot_memory(chat_jid)
 
     # Inject scheduled tasks for this chat so agent can list/cancel them
     tasks_for_chat = db.get_scheduled_tasks_for_chat(chat_jid)
@@ -71,6 +75,7 @@ async def run_container(
         "personaMd": persona_md,
         "hints": hints,
         "conversationHistory": history_text,
+        "hotMemory": hot_memory,
         "scheduledTasks": tasks_summary,
         "enabledTools": config.DEFAULT_TOOLS,
         "ipcDir": str(config.IPC_DIR),
@@ -116,7 +121,13 @@ async def run_container(
         if not stdout.strip():
             return {"status": "error", "error": "Container produced no output"}
 
-        return json.loads(stdout.decode())
+        result = json.loads(stdout.decode())
+        if isinstance(result, dict) and result.get("memory_patch"):
+            try:
+                update_hot_memory(chat_jid, result["memory_patch"])
+            except Exception:
+                pass
+        return result
 
     except asyncio.TimeoutError:
         if proc is not None:

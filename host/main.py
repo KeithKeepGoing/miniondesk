@@ -140,6 +140,11 @@ async def main() -> None:
                 if chan:
                     await chan.send_message(chat_jid, reply)
                     db.save_message(chat_jid, minion_name, reply, role="assistant")
+                    from .memory import append_warm_log
+                    try:
+                        append_warm_log(chat_jid, text, reply)
+                    except Exception:
+                        pass
         else:
             error = result.get("error", "Unknown error") if result else "No response"
             log.error(f"Container error [{chat_jid}]: {error}")

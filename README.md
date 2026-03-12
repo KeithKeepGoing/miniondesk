@@ -2,6 +2,12 @@
 
 > 企業內部 IT AI Copilot — IC 設計產業專屬 × 模型無關 × Docker 隔離 × 完全自架
 
+## 版本記錄
+
+v2.1.0 — 三層記憶系統（熱/暖/冷記憶 + FTS5 混合搜尋 + Weekly Compound）
+
+---
+
 每個小小兵是一個獨立的 Docker container，有名字、人設、專屬工具。
 支援 Gemini / Claude / OpenAI / Ollama，一行設定切換模型。資料完全不出公司。
 
