@@ -231,10 +231,21 @@ async def run_minion(
             return {"status": "error", "result": "⏱️ Request timed out. Please try again."}
         except asyncio.CancelledError:
             logger.warning("Container %s cancelled", container_name)
+            # Terminate the subprocess handle first (immediate SIGKILL on the
+            # docker process), then send docker stop for the named container.
+            try:
+                proc.kill()
+            except Exception:
+                pass
             try:
                 await _stop_container(container_name)
             except Exception:
                 pass
+            # Count cancellations against the circuit breaker so repeated
+            # cancellations (e.g. from upstream timeouts) are tracked correctly.
+            with _group_lock:
+                _group_fail_counts[group_jid] = _group_fail_counts.get(group_jid, 0) + 1
+                _group_fail_time[group_jid] = time.time()
             raise
 
     # Guard against runaway containers emitting giant outputs (OOM risk)

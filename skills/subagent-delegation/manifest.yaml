@@ -1,0 +1,7 @@
+skill: subagent-delegation
+version: "1.0.0"
+description: "Spawn parallel subagents for independent subtasks to maximize throughput"
+author: "MinionDesk/Superpowers"
+adds:
+  - docs/superpowers/subagent-delegation/SKILL.md
+modifies: []

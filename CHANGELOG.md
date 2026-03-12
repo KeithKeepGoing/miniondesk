@@ -4,6 +4,24 @@ All notable changes to MinionDesk will be documented in this file.
 
 ---
 
+## [1.2.8] - 2026-03-12
+
+### Reliability, Correctness, and Security Improvements (Fifth Round)
+
+- `dashboard.py`: Fixed SSE 503 response sent after HTTP 200 headers were already committed — guard now runs before `send_response(200)` so browsers receive a real 503 and back off (#43)
+- `container/runner/tools/messaging.py` + `enterprise.py`: IPC files now written atomically via `.tmp` + `os.rename()` to prevent host reading partially-written files (TOCTOU race) that caused silent message loss under load (#44)
+- `providers/auto.py`: Removed silent fallback to `localhost:11434` when no LLM is configured — now raises `RuntimeError` with a clear actionable message instead of producing cryptic connection-refused errors in production (#45)
+- `db.py`: `add_message()` and `record_evolution_run()` now assign `conn = _conn()` once and reuse it for both `execute()` and `commit()`, eliminating the two-call pattern where a future reconnect could skip the commit (#46)
+- `evolution.py`: `changed` check now includes `fitness_score` delta so the dashboard always reflects actual recent performance even when style/formality/depth dimensions are stable (#47)
+- `runner.py` (host): On `CancelledError`, `proc.kill()` is called on the subprocess handle before `docker stop`, and the circuit-breaker failure counter is incremented — prevents zombie containers and undercounted failures (#48)
+- `skills_engine.py`: `install_skill()` now rolls back all copied files on any mid-install failure, preventing partial-install state that bypassed collision detection on retry (#49)
+- `scheduler.py`: `once` tasks are no longer deleted before dispatch completes — deletion now happens in the done callback on success, preventing silent loss of one-time tasks on container failure (#50)
+- `config.py`: Default `CONTAINER_IMAGE` updated to `miniondesk-agent:1.2.8`; startup now logs the active image tag so operators can verify host/container alignment (#51)
+- `ipc.py`: Added handlers for `kb_search`, `workflow_trigger`, and `calendar_check` IPC types that were silently discarded (enterprise tools were effectively broken) (#52)
+- `miniondesk/__init__.py`: Version bumped to 1.2.8
+
+---
+
 ## [1.2.7] - 2026-03-12
 
 ### Reliability and Edge Case Improvements (Fourth Round)

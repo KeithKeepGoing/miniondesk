@@ -1,0 +1,7 @@
+skill: brainstorming
+version: "1.0.0"
+description: "Design-first gate before any implementation — ask questions, propose approaches"
+author: "MinionDesk/Superpowers"
+adds:
+  - docs/superpowers/brainstorming/SKILL.md
+modifies: []

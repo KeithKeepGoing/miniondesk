@@ -1,0 +1,8 @@
+skill: web-search
+version: "1.0.0"
+description: "Adds a web_search tool to all container agents (uses DuckDuckGo Instant Answer API, no key required)"
+author: "MinionDesk"
+adds:
+  - docs/superpowers/web-search/SKILL.md
+container_tools:
+  - dynamic_tools/web_search.py

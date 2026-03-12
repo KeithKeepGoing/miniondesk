@@ -1,0 +1,7 @@
+skill: verification
+version: "1.0.0"
+description: "Never claim done without running verification — tests, syntax, smoke tests"
+author: "MinionDesk/Superpowers"
+adds:
+  - docs/superpowers/verification/SKILL.md
+modifies: []

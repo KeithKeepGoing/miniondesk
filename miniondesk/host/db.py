@@ -172,11 +172,12 @@ def delete_group(jid: str) -> None:
 # ─── Messages ────────────────────────────────────────────────────────────────
 
 def add_message(group_jid: str, role: str, content: str) -> None:
-    _conn().execute(
+    conn = _conn()
+    conn.execute(
         "INSERT INTO messages(group_jid, role, content) VALUES(?,?,?)",
         (group_jid, role, content),
     )
-    _conn().commit()
+    conn.commit()
 
 
 def get_history(group_jid: str, limit: int = 20) -> list[dict]:
@@ -345,11 +346,12 @@ def kb_search(query: str, limit: int = 5, dept: str = "") -> list[dict]:
 # ─── Evolution runs ───────────────────────────────────────────────────────────
 
 def record_evolution_run(group_jid: str, success: bool, response_ms: int) -> None:
-    _conn().execute(
+    conn = _conn()
+    conn.execute(
         "INSERT INTO evolution_runs(group_jid, success, response_ms) VALUES(?,?,?)",
         (group_jid, int(success), response_ms),
     )
-    _conn().commit()
+    conn.commit()
 
 
 def get_recent_evolution_runs(group_jid: str, limit: int = 20) -> list[dict]:

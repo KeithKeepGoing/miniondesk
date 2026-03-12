@@ -200,6 +200,7 @@ async def run_host() -> None:
     (config.GROUPS_DIR / "global").mkdir(parents=True, exist_ok=True)
     db.init(config.DB_PATH)
     logger.info("Database initialized: %s", config.DB_PATH)
+    logger.info("Container image: %s", config.CONTAINER_IMAGE)
 
     # Init channels
     if config.TELEGRAM_TOKEN:
