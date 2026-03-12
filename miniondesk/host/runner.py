@@ -128,6 +128,7 @@ async def run_minion(
     from . import db
     from .evolution import genome_hints
     from .skills_engine import get_installed_skill_docs
+    from .memory import get_hot_memory, update_hot_memory
     hints = genome_hints(group_jid)
 
     # Installed Superpowers skill docs (injected into system prompt)
@@ -145,6 +146,10 @@ async def run_minion(
     except Exception as exc:
         logger.warning("Failed to load conversation history: %s", exc)
 
+    # Load hot memory for this group (injected into container context)
+    hot_memory = get_hot_memory(group_jid)
+    hot_memory_block = f"[MEMORY]\n{hot_memory}\n[/MEMORY]\n" if hot_memory else ""
+
     payload = {
         "prompt": prompt,
         "personaMd": persona_md,
@@ -152,6 +157,7 @@ async def run_minion(
         "groupClaudeMd": group_claude_md,
         "skillDocs": skill_docs,          # Superpowers skill instructions
         "hints": hints,
+        "hotMemory": hot_memory_block,    # Three-tier memory: hot memory injection
         "chatJid": chat_jid,
         "enabledTools": enabled_tools,
         "assistantName": config.ASSISTANT_NAME,
@@ -301,6 +307,13 @@ async def run_minion(
                 return {"status": "error", "result": f"Container output schema error: missing {missing}"}
             with _group_lock:
                 _group_fail_counts[group_jid] = 0
+            # Three-tier memory: apply memory_patch if container provided one
+            if isinstance(result, dict) and result.get("memory_patch"):
+                try:
+                    update_hot_memory(group_jid, result["memory_patch"])
+                    logger.debug("%sHot memory patched for group %s", rid, group_jid)
+                except Exception as mem_exc:
+                    logger.warning("%sFailed to apply memory_patch: %s", rid, mem_exc)
             return result
         except json.JSONDecodeError as exc:
             logger.error("%sJSON parse error: %s | output: %.200s", rid, exc, stdout_str[-500:])

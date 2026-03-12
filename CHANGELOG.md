@@ -4,6 +4,25 @@ All notable changes to MinionDesk will be documented in this file.
 
 ---
 
+## [1.3.0] — 2026-03-12
+
+### Added
+- Three-tier memory system inspired by OpenClaw/MemSearch architecture
+  - Hot Memory: per-group MEMORY.md (8KB), injected into every container run
+  - Warm Memory: daily log auto-appended after each conversation, 3h micro sync
+  - Cold Memory: SQLite FTS5 hybrid search (keyword + recency scoring)
+  - Weekly Compound: prune >30-day entries, distill patterns to hot memory
+- `miniondesk/host/memory/` module: `hot.py`, `warm.py`, `search.py`, `compound.py`
+- `db.py`: new tables `group_hot_memory`, `group_warm_logs`, `group_warm_logs_fts` (FTS5), `group_memory_sync`
+- `runner.py`: hot memory injected as `hotMemory` payload field (`[MEMORY]...[/MEMORY]` block); `memory_patch` JSON field allows container to update hot memory
+- `main.py`: `append_warm_log()` called after each successful conversation reply
+- `ipc.py`: new IPC type `memory_search` for querying historical conversation context via hybrid FTS5 + recency scoring
+
+### Chore
+- Version bump 1.2.20 → 1.3.0
+
+---
+
 ## [1.2.20] — 2026-03-12
 
 ### Fixed

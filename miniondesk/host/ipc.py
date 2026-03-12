@@ -354,5 +354,21 @@ async def _handle_ipc(
         else:
             await route_message(chat_jid, "⚠️ unblock_sender: missing sender_jid", "")
 
+    elif msg_type == "memory_search":
+        # Three-tier memory: hybrid FTS5 keyword + recency search over warm memory logs
+        from .memory.search import memory_search
+        query = payload.get("query", "")
+        if not query:
+            await route_message(chat_jid, "⚠️ memory_search requires 'query' field", "")
+            return
+        results = memory_search(group_jid, query)
+        if not results:
+            await route_message(chat_jid, "🔍 No memory found for that query.", "")
+        else:
+            lines = [f"🧠 Memory Search: _{query}_\n"]
+            for i, r in enumerate(results, 1):
+                lines.append(f"{i}. [{r['date']}] {r['content'][:150]}...")
+            await route_message(chat_jid, "\n".join(lines), "")
+
     else:
         logger.warning("Unknown IPC type: %s", msg_type)

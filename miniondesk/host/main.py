@@ -135,6 +135,12 @@ async def _run_and_reply(
     if reply:
         db.add_message(jid, "assistant", reply)
         await route_message(jid, reply)
+        # Three-tier memory: append warm log after each successful conversation
+        try:
+            from .memory import append_warm_log
+            append_warm_log(jid, text, reply)
+        except Exception as mem_exc:
+            logger.debug("warm_log append failed: %s", mem_exc)
 
 
 async def _dispatch_task(group_jid: str, prompt: str) -> None:
