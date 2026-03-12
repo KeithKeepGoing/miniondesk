@@ -1,6 +1,7 @@
 """Task scheduler for MinionDesk."""
 from __future__ import annotations
 import asyncio
+import datetime
 import logging
 import time
 import uuid
@@ -13,12 +14,38 @@ logger = logging.getLogger(__name__)
 # Suspend a recurring task after this many consecutive dispatch failures
 _MAX_CONSECUTIVE_FAILURES = 5
 
+# Maximum years in the future for a "once" schedule
+_ONCE_MAX_YEARS = 10
+
+
+def _validate_cron(expr: str) -> bool:
+    """Validate cron expression has sane field values to prevent ReDoS."""
+    if not croniter.is_valid(expr):
+        return False
+    parts = expr.split()
+    if len(parts) < 5:
+        return False
+    # Check each field is within normal bounds (no huge numbers)
+    limits = [(0, 59), (0, 23), (1, 31), (1, 12), (0, 7)]
+    for i, part in enumerate(parts[:5]):
+        for token in part.replace(',', ' ').replace('-', ' ').replace('/', ' ').split():
+            if token == '*':
+                continue
+            try:
+                val = int(token)
+                lo, hi = limits[i]
+                if not (lo <= val <= hi):
+                    return False
+            except ValueError:
+                pass  # named values like MON, JAN are ok
+    return True
+
 
 def _compute_next_run(schedule_type: str, schedule_value: str, now: float | None = None) -> int | None:
     now = now or time.time()
     if schedule_type == "cron":
         try:
-            if not croniter.is_valid(schedule_value):
+            if not _validate_cron(schedule_value):
                 return None
             return int(croniter(schedule_value, now).get_next())
         except Exception:
@@ -33,9 +60,17 @@ def _compute_next_run(schedule_type: str, schedule_value: str, now: float | None
             return None
     elif schedule_type == "once":
         try:
-            import datetime
             dt = datetime.datetime.fromisoformat(schedule_value)
-            return int(dt.timestamp())
+            ts = int(dt.timestamp())
+            # Reject datetimes more than _ONCE_MAX_YEARS in the future
+            max_ts = int(time.time()) + _ONCE_MAX_YEARS * 365 * 24 * 3600
+            if ts > max_ts:
+                logger.warning(
+                    "Scheduler: 'once' schedule %r is more than %d years in the future — rejected",
+                    schedule_value, _ONCE_MAX_YEARS,
+                )
+                return None
+            return ts
         except Exception:
             return None
     return None
@@ -78,6 +113,7 @@ async def run_scheduler(dispatch_fn, notify_fn=None) -> None:
     # In-flight set: task_ids currently being dispatched.
     # Prevents double-firing when a container is slower than the task interval.
     _in_flight: set[str] = set()
+    cycle_count = 0
 
     while True:
         try:
@@ -176,6 +212,23 @@ async def run_scheduler(dispatch_fn, notify_fn=None) -> None:
 
                 _task = asyncio.create_task(dispatch_fn(task["group_jid"], task["prompt"]))
                 _task.add_done_callback(_on_task_done)
+
+            # Prune stale _fail_counts entries every 100 cycles to prevent memory leak
+            cycle_count += 1
+            if cycle_count % 100 == 0:
+                existing_ids = {t["id"] for t in db.get_all_tasks()}
+                stale = [k for k in _fail_counts if k not in existing_ids]
+                for k in stale:
+                    del _fail_counts[k]
+                if stale:
+                    logger.debug("Scheduler: pruned %d stale _fail_counts entries", len(stale))
+            # Cap dict size: if too large, clear oldest entries (largest fail counts first)
+            if len(_fail_counts) > 1000:
+                excess = len(_fail_counts) - 1000
+                oldest_keys = sorted(_fail_counts, key=lambda k: _fail_counts[k])[:excess]
+                for k in oldest_keys:
+                    del _fail_counts[k]
+                logger.warning("Scheduler: _fail_counts exceeded 1000 entries, pruned %d oldest", excess)
         except Exception as exc:
             logger.error("Scheduler error: %s", exc)
         await asyncio.sleep(10)

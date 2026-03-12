@@ -77,11 +77,16 @@ async def handle_inbound(jid: str, text: str, trigger: str) -> None:
 
     # Input sanitization: truncate oversized prompts
     if len(text) > config.MAX_PROMPT_LENGTH:
+        truncated_from = len(text)
         logger.warning(
             "Prompt truncated from %d to %d chars for group %s",
-            len(text), config.MAX_PROMPT_LENGTH, jid,
+            truncated_from, config.MAX_PROMPT_LENGTH, jid,
         )
         text = text[:config.MAX_PROMPT_LENGTH]
+        # Notify user their message was truncated
+        await route_message(jid,
+            f"⚠️ 訊息過長（{truncated_from} 字元），已截斷至 {config.MAX_PROMPT_LENGTH} 字元。"
+        )
 
     # Generate request_id for log correlation
     request_id = uuid.uuid4().hex[:8]
@@ -169,6 +174,14 @@ async def _health_monitor_loop() -> None:
                     logger.info("Health: pruned %d stale immune_threats rows", pruned)
             except Exception as prune_exc:
                 logger.debug("immune_threats prune error: %s", prune_exc)
+            # Clean up genome rows that refer to groups no longer in the DB.
+            # Orphan genomes accumulate when groups are deleted without cascade cleanup.
+            try:
+                orphans = db.cleanup_orphan_genomes()
+                if orphans:
+                    logger.info("Health: cleaned up %d orphan genome rows", orphans)
+            except Exception as genome_exc:
+                logger.debug("orphan genome cleanup error: %s", genome_exc)
         except Exception as exc:
             # Elevated to WARNING so health errors are visible at default log level
             logger.warning("Health monitor error: %s", exc)
