@@ -19,11 +19,11 @@ Thread-safe：circuit breaker 與 genome 更新使用 lock / 原子 SQL
 架構改進：request_id 追蹤、schema 驗證、健康端點、輸入截斷
 安全加固：minion 名稱路徑驗證、container stdout 大小限制、SSE fan-out 修正
 背壓保護：GroupQueue 有界佇列、config 啟動驗證、ensure_future 全面替換
-v1.2.15 安全與穩定性：弱密碼啟動保護、group_folder 路徑穿越防護、tasks.status 索引、response_ms 箝制、指數退避重試、SSE 記憶體洩漏修正、統一時間戳來源
-v1.2.16 效能修正：dashboard N+1 genome 查詢改為單次批次查詢 (#97)
-v1.2.19 關機可靠性修正：asyncio task 明確取消防止 shutdown 卡住、scheduler dict 競態修正、IPC_POLL_INTERVAL 零值防護、dashboard HTTPServer shutdown hook、container name 長度上限、schedule_value ReDoS 防護 (#116-#121)
-v1.2.18 安全與可靠性修正：IPC 檔案大小限制、scheduler _in_flight 過期清理、web_search request_id 驗證、immune 單調時鐘滑動視窗 (#110-#114)
-v1.2.17 記憶體洩漏修正：scheduler _fail_counts 定期清理、immune LRU 上限、orphan genome 清理、群組刪除清理資料夾、截斷通知、cron 邊界驗證 (#103-#108)
+v1.2.19 關機可靠性：asyncio task 明確取消、scheduler dict 競態修正、IPC_POLL_INTERVAL 零值防護、dashboard shutdown hook、container name 上限、schedule_value ReDoS 防護 (#116-#121)
+v1.2.18 安全與可靠性：IPC 檔案大小限制、_in_flight 過期清理、request_id 驗證、immune 單調時鐘 (#110-#114)
+v1.2.17 記憶體洩漏：_fail_counts 清理、immune LRU 上限、orphan genome 清理、群組刪除清資料夾、截斷通知、cron 驗證 (#103-#108)
+v1.2.16 效能：dashboard N+1 genome 查詢改為單次批次 (#97)
+v1.2.15 安全強化：弱密碼保護、路徑穿越防護、tasks 索引、response_ms 箝制、指數退避、SSE 洩漏修正
 ```
 
 ---
