@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import pathlib
+import re as _re
 import time
 from typing import Callable, Awaitable
 
@@ -14,6 +15,8 @@ from . import config
 
 
 _WEB_SEARCH_MAX_RESPONSE_BYTES = 512 * 1024  # 512 KB — cap DDG response to prevent host OOM
+_MAX_IPC_FILE_SIZE = 1 * 1024 * 1024  # 1 MB
+_REQUEST_ID_RE = _re.compile(r'^[a-zA-Z0-9_\-]{4,64}$')
 
 
 def _do_web_search(query: str) -> dict:
@@ -136,6 +139,15 @@ async def watch_ipc(
                             processed.discard(evicted)
                         _processed_deque.append(str(f))
                         processed.add(str(f))
+                        try:
+                            file_size = f.stat().st_size
+                        except OSError:
+                            continue  # file was deleted between listing and stat
+                        if file_size > _MAX_IPC_FILE_SIZE:
+                            logger.warning("IPC file too large (%d bytes > %d) — skipping: %s",
+                                           file_size, _MAX_IPC_FILE_SIZE, f.name)
+                            f.unlink(missing_ok=True)
+                            continue
                         try:
                             payload = json.loads(f.read_text(encoding="utf-8"))
                             await _handle_ipc(payload, group_jid, folder, route_message, route_file)
@@ -297,6 +309,9 @@ async def _handle_ipc(
         query = payload.get("query", "").strip()
         request_id = payload.get("request_id", "")
         if query and request_id:
+            if not _REQUEST_ID_RE.match(request_id):
+                logger.warning("IPC web_search: invalid request_id %r — rejecting", request_id)
+                return
             loop = asyncio.get_event_loop()
             result_data = await loop.run_in_executor(None, _do_web_search, query)
             # Write result file into the group's IPC dir for the container to pick up

@@ -40,21 +40,24 @@ def is_allowed(sender_jid: str, group_jid: str) -> bool:
         return False
 
     # In-memory rate limit (sliding window, 60s)
-    now = time.time()
+    # Use monotonic time for the in-memory window so NTP adjustments and DST
+    # changes do not corrupt the rate calculation. DB timestamps (last_seen)
+    # still use wall-clock time via int(time.time()).
+    now_mono = time.monotonic()
     window_key = f"{sender_jid}:{group_jid}"
     timestamps = _get_sender_timestamps(window_key)
 
     # Remove timestamps older than the 60s window first, then append current time.
     # Evict the key entirely when the filtered list is empty (sender has been quiet
     # for > 60s) to prevent the dict from growing without bound over time.
-    fresh = [t for t in timestamps if now - t < 60]
+    fresh = [t for t in timestamps if now_mono - t < 60]
     if not fresh:
         # Sender had no recent activity — clean up the key, then count just this message
         if window_key in _sender_timestamps:
             del _sender_timestamps[window_key]
-        fresh = [now]
+        fresh = [now_mono]
     else:
-        fresh.append(now)
+        fresh.append(now_mono)
     _sender_timestamps[window_key] = fresh
     count = len(fresh)
 

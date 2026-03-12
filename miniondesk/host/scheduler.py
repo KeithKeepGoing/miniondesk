@@ -113,6 +113,8 @@ async def run_scheduler(dispatch_fn, notify_fn=None) -> None:
     # In-flight set: task_ids currently being dispatched.
     # Prevents double-firing when a container is slower than the task interval.
     _in_flight: set[str] = set()
+    _in_flight_since: dict[str, float] = {}  # task_id → time.monotonic() when added
+    _IN_FLIGHT_MAX_AGE = 3600.0  # 1 hour max
     cycle_count = 0
 
     while True:
@@ -128,6 +130,7 @@ async def run_scheduler(dispatch_fn, notify_fn=None) -> None:
 
                 logger.info("Dispatching task %s for group %s", task_id, task["group_jid"])
                 _in_flight.add(task_id)
+                _in_flight_since[task_id] = time.monotonic()
 
                 # For recurring tasks, advance next_run immediately so the DB
                 # query won't re-select it on the next poll cycle. The in-flight
@@ -144,6 +147,7 @@ async def run_scheduler(dispatch_fn, notify_fn=None) -> None:
                     _prompt: str = task.get("prompt", ""),
                 ) -> None:
                     _in_flight.discard(_task_id)
+                    _in_flight_since.pop(_task_id, None)
                     exc = t.exception() if not t.cancelled() else None
                     if exc:
                         _fail_counts[_task_id] = _fail_counts.get(_task_id, 0) + 1
@@ -222,6 +226,13 @@ async def run_scheduler(dispatch_fn, notify_fn=None) -> None:
                     del _fail_counts[k]
                 if stale:
                     logger.debug("Scheduler: pruned %d stale _fail_counts entries", len(stale))
+                # Periodic cleanup of stale in-flight entries (tasks stuck > 1 hour)
+                now_mono = time.monotonic()
+                stale_inflight = [tid for tid, ts in _in_flight_since.items() if now_mono - ts > _IN_FLIGHT_MAX_AGE]
+                for tid in stale_inflight:
+                    logger.warning("scheduler: clearing stale in-flight task %s (>%.0fs)", tid, _IN_FLIGHT_MAX_AGE)
+                    _in_flight.discard(tid)
+                    _in_flight_since.pop(tid, None)
             # Cap dict size: if too large, clear oldest entries (largest fail counts first)
             if len(_fail_counts) > 1000:
                 excess = len(_fail_counts) - 1000
