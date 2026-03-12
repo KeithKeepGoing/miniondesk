@@ -46,7 +46,14 @@ def evolve_genome(group_jid: str) -> dict | None:
     generation = genome.get("generation", 0)
 
     # ── response_style evolution ──────────────────────────────────────────────
-    idx = STYLE_ORDER.index(genome.get("response_style", "balanced"))
+    current_style = genome.get("response_style", "balanced")
+    if current_style not in STYLE_ORDER:
+        logger.warning(
+            "Unknown response_style %r for group %s — resetting to 'balanced'",
+            current_style, group_jid,
+        )
+        current_style = "balanced"
+    idx = STYLE_ORDER.index(current_style)
     if avg_ms > 15_000 and avg_fitness < 0.4 and idx > 0:
         new_style = STYLE_ORDER[idx - 1]  # → concise
     elif avg_ms < 5_000 and avg_fitness > 0.7 and idx < 2:

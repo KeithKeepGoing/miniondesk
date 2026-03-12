@@ -70,13 +70,30 @@ async def run_scheduler(dispatch_fn) -> None:
     logger.info("Scheduler started")
     # In-memory consecutive failure counter per task_id
     _fail_counts: dict[str, int] = {}
+    # In-flight set: task_ids currently being dispatched.
+    # Prevents double-firing when a container is slower than the task interval.
+    _in_flight: set[str] = set()
 
     while True:
         try:
             due = db.get_due_tasks()
             for task in due:
                 task_id = task["id"]
+
+                # Skip if already dispatched and still running (short-interval guard)
+                if task_id in _in_flight:
+                    logger.debug("Scheduler task %s already in-flight — skipping", task_id)
+                    continue
+
                 logger.info("Dispatching task %s for group %s", task_id, task["group_jid"])
+                _in_flight.add(task_id)
+
+                # For recurring tasks, advance next_run immediately so the DB
+                # query won't re-select it on the next poll cycle. The in-flight
+                # set provides an additional guard during the current run.
+                if task["schedule_type"] != "once":
+                    next_run = _compute_next_run(task["schedule_type"], task["schedule_value"])
+                    db.update_task_run(task_id, next_run or int(time.time()) + 3600)
 
                 def _on_task_done(
                     t: asyncio.Task,
@@ -84,6 +101,7 @@ async def run_scheduler(dispatch_fn) -> None:
                     _group_jid: str = task["group_jid"],
                     _schedule_type: str = task["schedule_type"],
                 ) -> None:
+                    _in_flight.discard(_task_id)
                     exc = t.exception() if not t.cancelled() else None
                     if exc:
                         _fail_counts[_task_id] = _fail_counts.get(_task_id, 0) + 1
@@ -121,9 +139,6 @@ async def run_scheduler(dispatch_fn) -> None:
 
                 _task = asyncio.create_task(dispatch_fn(task["group_jid"], task["prompt"]))
                 _task.add_done_callback(_on_task_done)
-                if task["schedule_type"] != "once":
-                    next_run = _compute_next_run(task["schedule_type"], task["schedule_value"])
-                    db.update_task_run(task_id, next_run or int(time.time()) + 3600)
         except Exception as exc:
             logger.error("Scheduler error: %s", exc)
         await asyncio.sleep(10)

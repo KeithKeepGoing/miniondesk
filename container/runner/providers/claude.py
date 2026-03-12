@@ -11,7 +11,7 @@ class ClaudeProvider(BaseProvider):
     def __init__(self):
         import anthropic
         self._client = anthropic.AsyncAnthropic(
-            api_key=os.environ["ANTHROPIC_API_KEY"]
+            api_key=os.getenv("ANTHROPIC_API_KEY", "")
         )
         self._model = os.getenv("CLAUDE_MODEL", "claude-3-5-haiku-20241022")
 

@@ -10,7 +10,7 @@ class GeminiProvider(BaseProvider):
 
     def __init__(self):
         import google.generativeai as genai
-        genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
+        genai.configure(api_key=os.getenv("GOOGLE_API_KEY", ""))
         self._genai = genai
         self._model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 
