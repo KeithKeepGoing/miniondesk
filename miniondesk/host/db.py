@@ -148,8 +148,25 @@ def get_all_groups() -> list[dict]:
 
 
 def delete_group(jid: str) -> None:
-    _conn().execute("DELETE FROM groups WHERE jid=?", (jid,))
-    _conn().commit()
+    """Delete a group and ALL related data (messages, tasks, genome, evolution, immune) atomically."""
+    conn = _conn()
+    conn.execute("BEGIN")
+    try:
+        for table in (
+            "messages", "tasks", "genome", "evolution_runs",
+            "evolution_log", "immune_threats",
+        ):
+            conn.execute(f"DELETE FROM {table} WHERE group_jid=?", (jid,))
+        # dev_sessions table may not exist yet (created lazily by DevEngine)
+        try:
+            conn.execute("DELETE FROM dev_sessions WHERE group_jid=?", (jid,))
+        except Exception:
+            pass
+        conn.execute("DELETE FROM groups WHERE jid=?", (jid,))
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
 
 
 # ─── Messages ────────────────────────────────────────────────────────────────
@@ -239,6 +256,13 @@ def get_genome(group_jid: str) -> dict:
     }
 
 
+def _clamp01(value) -> float | None:
+    """Clamp a float value to [0.0, 1.0], or return None if value is None."""
+    if value is None:
+        return None
+    return max(0.0, min(1.0, float(value)))
+
+
 def update_genome(group_jid: str, data: dict) -> None:
     conn = _conn()
     now = int(time.time())
@@ -261,9 +285,11 @@ def update_genome(group_jid: str, data: dict) -> None:
         {
             "group_jid": group_jid,
             "response_style": data.get("response_style"),
-            "formality": data.get("formality"),
-            "technical_depth": data.get("technical_depth"),
-            "fitness_score": data.get("fitness_score"),
+            # Clamp all float fields to [0.0, 1.0] to prevent out-of-range values
+            # from corrupting dashboard display or evolution math.
+            "formality": _clamp01(data.get("formality")),
+            "technical_depth": _clamp01(data.get("technical_depth")),
+            "fitness_score": _clamp01(data.get("fitness_score")),
             "updated_at": now,
         },
     )

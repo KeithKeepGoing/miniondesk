@@ -2,6 +2,7 @@
 from __future__ import annotations
 import asyncio
 import collections
+import functools
 import json
 import logging
 import os
@@ -123,7 +124,11 @@ async def _handle_ipc(
 
     elif msg_type == "schedule_task":
         from . import scheduler
-        await scheduler.add_task(group_jid, payload)
+        try:
+            await scheduler.add_task(group_jid, payload)
+        except ValueError as exc:
+            logger.error("IPC schedule_task: invalid schedule for group %s: %s", group_jid, exc)
+            await route_message(chat_jid, f"⚠️ schedule_task failed: {exc}", "")
 
     elif msg_type == "dev_task":
         # DevEngine: start a development pipeline
@@ -145,11 +150,12 @@ async def _handle_ipc(
             await route_message(chat_jid, "⚠️ dev_task: missing prompt", "")
 
     elif msg_type == "apply_skill":
-        # Skills Engine: install a skill
+        # Skills Engine: install a skill — run in executor to avoid blocking the event loop
         from .skills_engine import install_skill
         skill_name = payload.get("skill", "")
         if skill_name:
-            ok, msg = install_skill(skill_name)
+            loop = asyncio.get_event_loop()
+            ok, msg = await loop.run_in_executor(None, functools.partial(install_skill, skill_name))
             await route_message(chat_jid, msg, "")
         else:
             await route_message(chat_jid, "⚠️ apply_skill: missing skill name", "")
@@ -158,7 +164,8 @@ async def _handle_ipc(
         from .skills_engine import uninstall_skill
         skill_name = payload.get("skill", "")
         if skill_name:
-            ok, msg = uninstall_skill(skill_name)
+            loop = asyncio.get_event_loop()
+            ok, msg = await loop.run_in_executor(None, functools.partial(uninstall_skill, skill_name))
             await route_message(chat_jid, msg, "")
 
     elif msg_type == "list_skills":

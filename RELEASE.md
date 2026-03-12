@@ -2,6 +2,54 @@
 
 ---
 
+## v1.2.7 — 2026-03-12
+
+### Reliability and Edge Case Improvements (Fourth Round)
+
+本次版本修正 8 個在 v1.2.6 後發現的新可靠性與安全性問題，涵蓋 DevEngine 並發保護、容器名稱衝突、排程表達式驗證、基因組邊界檢查、群組刪除孤立資料及 SSE 連線洪泛防護。
+
+#### Fix 1: DevEngine 同群組並發 session 防護（#34）
+
+`start_dev_session()` 未限制同群組的並發 session，兩個並發 pipeline 會同時讀寫 artifacts，導致資料損毀。
+新增 DB 查詢確認 `pending`/`running` session 不存在再啟動新 session；已有活躍 session 時回傳錯誤並拒絕啟動。
+
+#### Fix 2: `_parse_file_blocks` 路徑穿越繞過（#37）
+
+`_parse_file_blocks()` 以 `replace("..", "")` 淨化路徑，可被 `....//` 模式繞過（替換後剩餘 `../`）。
+移除脆弱字串替換邏輯，直接依賴 `_deploy_files()` 中已存在的 `resolve().relative_to()` 正確性檢查。
+
+#### Fix 3: 容器名稱衝突（#36）
+
+`container_name = f"minion-{group_folder}-{int(time.time())}"` 在同一秒內兩次請求時產生相同名稱，Docker 拒絕第二次啟動並累計熔斷計數。
+改為使用毫秒精度時間戳加 6 字元 UUID 後綴。
+
+#### Fix 4: 排程器無效表達式靜默儲存（#35）
+
+`add_task()` 對無效 cron/interval 表達式儲存 `next_run=NULL` 的任務，任務永不觸發且無錯誤提示。
+新增 `croniter.is_valid()` 驗證；無效時拋出 `ValueError`，`ipc.py` 捕捉後回報使用者。
+
+#### Fix 5: 技能安裝阻塞 asyncio event loop（#41）
+
+`install_skill()`/`uninstall_skill()` 在 async 處理器中同步執行檔案 I/O，阻塞 event loop。
+改為 `run_in_executor()` 在執行緒池執行。
+
+#### Fix 6: 基因組浮點數邊界未檢查（#39）
+
+`update_genome()` 接受超出 `[0.0, 1.0]` 範圍的值，導致儀表板 CSS 寬度異常。
+新增 `_clamp01()` 輔助函數，在寫入前限制所有浮點基因組欄位。
+
+#### Fix 7: `delete_group` 留下孤立資料（#38）
+
+`delete_group()` 僅刪除 `groups` 表，相關 `messages`、`tasks`、`genome` 等表資料殘留。
+改為在單一交易中刪除所有相關表的對應資料列。
+
+#### Fix 8: SSE 連線洪泛導致記憶體耗盡（#40）
+
+SSE 端點未限制並發客戶端數，大量連線可耗盡記憶體與檔案描述符。
+新增 `_MAX_SSE_CLIENTS=20` 上限；超過時回傳 HTTP 503。
+
+---
+
 ## v1.2.6 — 2026-03-12
 
 ### Security and Reliability Improvements (Third Round)

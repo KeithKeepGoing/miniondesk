@@ -18,12 +18,17 @@ def _compute_next_run(schedule_type: str, schedule_value: str, now: float | None
     now = now or time.time()
     if schedule_type == "cron":
         try:
+            if not croniter.is_valid(schedule_value):
+                return None
             return int(croniter(schedule_value, now).get_next())
         except Exception:
             return None
     elif schedule_type == "interval":
         try:
-            return int(now + int(schedule_value) / 1000)
+            ms = int(schedule_value)
+            if ms <= 0:
+                return None
+            return int(now + ms / 1000)
         except Exception:
             return None
     elif schedule_type == "once":
@@ -37,10 +42,16 @@ def _compute_next_run(schedule_type: str, schedule_value: str, now: float | None
 
 
 async def add_task(group_jid: str, payload: dict) -> str:
+    """Schedule a task. Raises ValueError if the schedule expression is invalid."""
     task_id = payload.get("id") or str(uuid.uuid4())
     schedule_type  = payload.get("schedule_type", "once")
     schedule_value = payload.get("schedule_value", "")
     next_run = _compute_next_run(schedule_type, schedule_value)
+    if next_run is None:
+        raise ValueError(
+            f"Invalid schedule: type={schedule_type!r} value={schedule_value!r}. "
+            "Task not saved."
+        )
     db.upsert_task({
         "id": task_id,
         "group_jid": group_jid,
