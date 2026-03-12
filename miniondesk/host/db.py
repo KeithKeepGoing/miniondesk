@@ -207,6 +207,16 @@ def delete_task(task_id: str) -> None:
     _conn().commit()
 
 
+def suspend_task(task_id: str, last_error: str = "") -> None:
+    """Suspend a task after repeated failures (sets status='suspended')."""
+    conn = _conn()
+    conn.execute(
+        "UPDATE tasks SET status='suspended' WHERE id=?",
+        (task_id,),
+    )
+    conn.commit()
+
+
 def get_tasks_for_group(group_jid: str) -> list[dict]:
     rows = _conn().execute(
         "SELECT * FROM tasks WHERE group_jid=?", (group_jid,)

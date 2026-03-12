@@ -195,8 +195,9 @@ async def run_minion(
 
     stdin_data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
 
-    # Semaphore limits concurrent Docker runs (configurable, default 4)
-    # Does NOT hold semaphore across full container lifetime — only during spawn
+    # Semaphore limits concurrent running Docker containers (configurable, default 4).
+    # Held across the FULL container lifetime (spawn + communicate) so that
+    # CONTAINER_MAX_CONCURRENT accurately caps how many containers run simultaneously.
     semaphore = _get_semaphore()
     async with semaphore:
         try:
@@ -213,25 +214,25 @@ async def run_minion(
                 _group_fail_time[group_jid] = time.time()
             return {"status": "error", "result": f"Failed to start container: {exc}"}
 
-    try:
-        stdout, stderr = await asyncio.wait_for(
-            proc.communicate(stdin_data),
-            timeout=config.CONTAINER_TIMEOUT,
-        )
-    except asyncio.TimeoutError:
-        logger.error("Container %s timed out after %ds", container_name, config.CONTAINER_TIMEOUT)
         try:
-            await _stop_container(container_name)
-        except Exception:
-            pass
-        return {"status": "error", "result": "⏱️ Request timed out. Please try again."}
-    except asyncio.CancelledError:
-        logger.warning("Container %s cancelled", container_name)
-        try:
-            await _stop_container(container_name)
-        except Exception:
-            pass
-        raise
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(stdin_data),
+                timeout=config.CONTAINER_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            logger.error("Container %s timed out after %ds", container_name, config.CONTAINER_TIMEOUT)
+            try:
+                await _stop_container(container_name)
+            except Exception:
+                pass
+            return {"status": "error", "result": "⏱️ Request timed out. Please try again."}
+        except asyncio.CancelledError:
+            logger.warning("Container %s cancelled", container_name)
+            try:
+                await _stop_container(container_name)
+            except Exception:
+                pass
+            raise
 
     # Guard against runaway containers emitting giant outputs (OOM risk)
     max_bytes = config.CONTAINER_MAX_OUTPUT_BYTES

@@ -147,6 +147,15 @@ def install_skill(skill_name: str) -> tuple[bool, str]:
             logger.warning("Skill %s: file not found: %s", name, src)
             continue
         dst = base_dir / rel_path
+        # Security: prevent path traversal — dst must stay within base_dir
+        try:
+            dst.resolve().relative_to(base_dir.resolve())
+        except ValueError:
+            logger.error(
+                "Skill %s: rejected path traversal in adds: %r (resolves outside BASE_DIR)",
+                name, rel_path,
+            )
+            return False, f"Skill '{name}' manifest contains unsafe path: {rel_path!r}"
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
         copied.append(rel_path)
@@ -162,7 +171,27 @@ def install_skill(skill_name: str) -> tuple[bool, str]:
             logger.warning("Skill %s: container_tool not found: %s", name, src)
             continue
         # Always flatten into dynamic_tools/ (just filename)
+        # Security: reject filenames with path separators (no subdirectory traversal)
+        if "/" in src.name or "\\" in src.name or src.name.startswith("."):
+            logger.error("Skill %s: rejected unsafe container_tool filename: %r", name, src.name)
+            return False, f"Skill '{name}' has unsafe container_tool filename: {src.name!r}"
         dst = dynamic_tools_dir / src.name
+        # Collision check: if file already exists and belongs to a different skill, refuse
+        if dst.exists():
+            owner = next(
+                (sk for sk, info in registry.items()
+                 if src.name in [Path(t).name for t in info.get("container_tools", [])]),
+                None,
+            )
+            if owner and owner != name:
+                logger.error(
+                    "Skill %s: container_tool %r conflicts with skill '%s' — install aborted",
+                    name, src.name, owner,
+                )
+                return False, (
+                    f"Skill '{name}' container_tool '{src.name}' conflicts with "
+                    f"already-installed skill '{owner}'. Uninstall '{owner}' first."
+                )
         shutil.copy2(src, dst)
         copied.append(f"dynamic_tools/{src.name}")
         logger.info("Skill %s: installed container tool %s → %s", name, src.name, dst)

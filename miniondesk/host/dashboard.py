@@ -1,6 +1,7 @@
 """MinionDesk Dashboard — pure stdlib HTTP server with real-time SSE log stream."""
 from __future__ import annotations
 import asyncio
+import base64
 import html
 import json
 import logging
@@ -245,9 +246,9 @@ async function pollStatus() {
     const tbody = document.getElementById('minion-tbody');
     tbody.innerHTML = groups.map(g => `
       <tr>
-        <td>${g.name}</td>
-        <td>🐤 ${g.minion}</td>
-        <td><code>${g.trigger}</code></td>
+        <td>${htmlEsc(g.name||'')}</td>
+        <td>🐤 ${htmlEsc(g.minion||'')}</td>
+        <td><code>${htmlEsc(g.trigger||'')}</code></td>
         <td>${g.genome?.generation ?? 0}</td>
         <td><span class="badge badge-ok">${((g.genome?.fitness_score||0.5)*100).toFixed(0)}%</span></td>
       </tr>`).join('');
@@ -255,19 +256,19 @@ async function pollStatus() {
     // Groups table
     document.getElementById('groups-tbody').innerHTML = groups.map(g => `
       <tr>
-        <td>${g.name}</td>
-        <td><code style="font-size:11px">${g.jid}</code></td>
-        <td>${g.folder}</td>
-        <td>🐤 ${g.minion}</td>
-        <td><code>${g.trigger}</code></td>
+        <td>${htmlEsc(g.name||'')}</td>
+        <td><code style="font-size:11px">${htmlEsc(g.jid||'')}</code></td>
+        <td>${htmlEsc(g.folder||'')}</td>
+        <td>🐤 ${htmlEsc(g.minion||'')}</td>
+        <td><code>${htmlEsc(g.trigger||'')}</code></td>
       </tr>`).join('');
 
     // Genome cards
     document.getElementById('genome-cards').innerHTML = groups.map(g => {
       const gn = g.genome || {};
       return `<div class="stat-card" style="margin-bottom:12px">
-        <b>🐤 ${g.name} (${g.minion})</b><br>
-        <div style="margin-top:8px;color:#888">Style: <span style="color:#b39ddb">${gn.response_style||'balanced'}</span> &nbsp; Gen: ${gn.generation||0}</div>
+        <b>🐤 ${htmlEsc(g.name||'')} (${htmlEsc(g.minion||'')})</b><br>
+        <div style="margin-top:8px;color:#888">Style: <span style="color:#b39ddb">${htmlEsc(gn.response_style||'balanced')}</span> &nbsp; Gen: ${gn.generation||0}</div>
         <div style="margin-top:6px;color:#888">Formality (${((gn.formality||0.5)*100).toFixed(0)}%)
           <div class="genome-bar"><div class="genome-fill" style="width:${(gn.formality||0.5)*100}%"></div></div></div>
         <div style="margin-top:6px;color:#888">Tech Depth (${((gn.technical_depth||0.5)*100).toFixed(0)}%)
@@ -440,11 +441,43 @@ def _get_health() -> dict:
 
 # ─── HTTP handler ─────────────────────────────────────────────────────────────
 
+def _check_auth(handler: "BaseHTTPRequestHandler") -> bool:
+    """Return True if the request is authenticated (or auth is disabled)."""
+    password = config.DASHBOARD_PASSWORD
+    # Auth disabled when password is empty string
+    if not password:
+        return True
+    auth_header = handler.headers.get("Authorization", "")
+    if not auth_header.startswith("Basic "):
+        return False
+    try:
+        decoded = base64.b64decode(auth_header[6:]).decode("utf-8", errors="replace")
+        # Accept either ":<password>" or "admin:<password>"
+        _, _, provided = decoded.partition(":")
+        return provided == password
+    except Exception:
+        return False
+
+
 class _Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass  # Suppress access logs
 
+    def _require_auth(self) -> bool:
+        """Send 401 if not authenticated. Returns True if auth passed."""
+        if _check_auth(self):
+            return True
+        self.send_response(401)
+        self.send_header("WWW-Authenticate", 'Basic realm="MinionDesk Dashboard"')
+        self.send_header("Content-Type", "text/plain")
+        self.send_header("Content-Length", "13")
+        self.end_headers()
+        self.wfile.write(b"Unauthorized\n")
+        return False
+
     def do_GET(self):
+        if not self._require_auth():
+            return
         path = self.path.split("?")[0]
 
         if path == "/":
