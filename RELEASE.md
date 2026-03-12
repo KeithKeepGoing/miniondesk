@@ -2,6 +2,37 @@
 
 ---
 
+## v1.2.12 — 2026-03-12
+
+### Docker: Upgrade Agent Container with CJK Fonts and Pre-installed python-pptx
+
+本次版本升級 minion container 的 Docker 基礎鏡像，解決中文 PPT 生成失敗與 runtime pip 網路依賴問題。
+
+#### 問題
+
+1. *生成中文 PPT 時字元顯示為方塊*（#80）：舊的 `python:3.11-slim` 基礎鏡像不含任何 CJK 字型套件。`python-pptx` 在找不到對應字型時以方塊佔位符取代所有中文字元。
+
+2. *python-pptx 在 runtime 安裝有網路依賴*（#80）：技能腳本在執行時才透過 `pip install` 安裝 `python-pptx`。PyPI 網路不穩定時安裝失敗，導致技能無法使用。
+
+#### 修正
+
+- 基礎鏡像從 `python:3.11-slim` 升級至 `python:3.9`（Debian Bullseye 完整版）
+- 新增系統套件：`libfreetype6`、`libpng16-16`、`zlib1g`
+- 新增中文字型：`fonts-wqy-zenhei`、`fonts-wqy-microhei` + `fc-cache -fv`
+- 預裝 `python-pptx==1.0.2`（版本鎖定，消除 runtime 網路依賴）
+- 新增 `ENV LANG=C.UTF-8`
+
+#### 升級
+
+重建 minion container image 後即可：
+
+```bash
+git pull
+docker build -t miniondesk-agent:1.2.12 -f container/Dockerfile .
+```
+
+---
+
 ## v1.2.11 — 2026-03-12
 
 ### Reliability, Memory, and Usability Fixes (Eighth Round)
