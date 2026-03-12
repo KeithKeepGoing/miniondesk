@@ -2,6 +2,40 @@
 
 ---
 
+## v1.2.14 — 2026-03-12
+
+### Version Bump: Align pyproject.toml with Production Releases
+
+This release aligns `pyproject.toml` with the actual merged state of the repository. No new features or fixes are introduced beyond what was already shipped in v1.2.12 and v1.2.13.
+
+#### Why This Release
+
+`pyproject.toml` was stale at `1.2.11` while the codebase had already incorporated the Docker improvements from v1.2.12 and v1.2.13. This bump brings the package metadata in sync so that `pip install`, `--version`, and published wheel metadata all reflect the correct version.
+
+#### What's Included (carried from v1.2.12 and v1.2.13)
+
+*Docker image is now production-ready with full MCP and tool-use support:*
+
+- Base image upgraded from `python:3.9` to `python:3.11`
+- Node.js 20 LTS pre-installed — enables MCP stdio/HTTP server subprocesses via `Bash` tool
+- Complete CJK font stack: `fonts-noto-cjk`, `fonts-wqy-zenhei`, `fonts-wqy-microhei`
+- Pre-installed document stack: `python-pptx`, `reportlab`, `openpyxl`, `python-docx`
+- Data science stack: `pandas`, `numpy`, `matplotlib`, `scipy`, `seaborn` (headless via `MPLBACKEND=Agg`)
+- Vision/OCR: `Pillow`, `pytesseract`, `opencv-python-headless`, `tesseract-ocr` with CJK language packs
+- Web stack: `httpx`, `beautifulsoup4`, `lxml`, `html5lib`
+- Non-root `minion` user (uid 1000), `LC_ALL=C.UTF-8`, `MPLBACKEND=Agg`
+
+#### Upgrade
+
+```bash
+git pull
+docker build -t miniondesk-agent:1.2.14 -f container/Dockerfile .
+```
+
+Update `CONTAINER_IMAGE=miniondesk-agent:1.2.14` in your `.env`.
+
+---
+
 ## v1.2.13 — 2026-03-12
 
 ### Docker: Production-Ready Agent Container with MCP, Document, and Data Science Support
