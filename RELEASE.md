@@ -2,40 +2,35 @@
 
 ---
 
-## v1.2.18 — 2026-03-12
+## v1.2.19 — 2026-03-12
 
-### Security, Reliability, and Correctness Fixes (Eleventh Round)
+### Shutdown Reliability, Concurrency, and Security Fixes (Issues #116–#121)
 
-This release addresses 5 issues spanning IPC input validation, scheduler memory safety, dashboard thread safety, and immune system clock correctness. No new features; all changes are fixes and hardening.
+This release addresses 6 issues across shutdown correctness, scheduler race conditions, config validation, dashboard lifecycle, container naming, and IPC input validation. No new features; all changes are hardening fixes.
 
-#### Fix: IPC File Size Guard Before JSON Parse (#110)
+#### Fix: Asyncio Tasks Not Cancelled on Shutdown (#116)
 
-`watch_ipc()` previously called `f.read_text()` on every `.json` file in the IPC directory before checking its size. A container writing a file larger than 1 MB (whether runaway or malicious) would cause the entire file to be buffered in memory before `json.loads()` was attempted. The fix adds a `_MAX_IPC_FILE_SIZE = 1 MB` constant and a `f.stat().st_size` check before reading. Files exceeding the limit are logged as a WARNING, deleted, and skipped via `continue`. An `OSError` on the stat call (file deleted between listing and stat) is caught and skipped silently.
+On SIGTERM the `asyncio.gather()` returned after `stop_event.wait()` completed, but remaining tasks (health monitor sleeping 60 s, orphan cleanup sleeping 300 s) continued until their sleep expired. On deployments with tight systemd `TimeoutStopSec`, this could cause force-kills. The fix adds an explicit task cancellation loop after `gather()` returns, with `await asyncio.gather(*pending, return_exceptions=True)` to collect all cancellations cleanly.
 
-#### Fix: `scheduler.py` `_in_flight` Stale Entry Leak (#111)
+#### Fix: Scheduler `_fail_counts` Dict Modification Race (#117)
 
-`_in_flight` is a set of task IDs currently being dispatched, used to prevent double-firing on short-interval tasks. If a task's `asyncio.Task` done callback was never called (e.g. due to a bug or event loop teardown), the task ID would remain in `_in_flight` forever, permanently blocking that task from re-firing. The fix adds `_in_flight_since: dict[str, float]` tracking `time.monotonic()` when each task was added. The existing 100-cycle maintenance block now also prunes entries older than `_IN_FLIGHT_MAX_AGE = 3600.0` seconds with a WARNING log.
+The `_fail_counts` pruning loop iterated directly over the dict (`for k in _fail_counts`) while `_on_task_done` callbacks could modify it concurrently, raising `RuntimeError: dictionary changed size during iteration`. Fixed by iterating over `list(_fail_counts.keys())` — a snapshot taken before the loop begins.
 
-#### Fix: `dashboard.py` `_log_buffer` Slice Under Lock (#112)
+#### Fix: `IPC_POLL_INTERVAL=0` Causes 100% CPU Busy-Loop (#118)
 
-The `/api/logs` endpoint's `list(_log_buffer[-100:])` slice was already wrapped with `_log_lock`, and the `emit()` function in `_QueueHandler` also acquires `_log_lock` before appending. Both read and write paths are correctly protected. No code change required; documented here for completeness.
+`config.validate()` did not check `IPC_POLL_INTERVAL`. A value of 0 or negative causes the IPC watcher to spin without any sleep, exhausting a CPU core and making the host unresponsive. The fix adds a `< 0.01` lower-bound check in `validate()` which raises `ValueError` at startup.
 
-#### Fix: `ipc.py` Web Search `request_id` Validation (#113)
+#### Fix: Dashboard Server Thread Hangs on Shutdown (#119)
 
-The `web_search` IPC handler used `request_id` directly from the container-controlled payload to construct a filename (`ws_result_{request_id}.json`) in the group's `.ipc` directory. A `request_id` containing `../` or other path components could escape the intended directory. The fix adds `_REQUEST_ID_RE = re.compile(r'^[a-zA-Z0-9_\-]{4,64}$')` and validates `request_id` before constructing the file path; invalid values are rejected with a WARNING and the handler returns early.
+`run_dashboard()` looped `while t.is_alive(): await asyncio.sleep(5)`. The `HTTPServer` had no shutdown hook, so when the gather was cancelled the coroutine hung indefinitely. Fixed by storing the `HTTPServer` reference and calling `server.shutdown()` + `t.join(timeout=3)` inside the `CancelledError` handler, allowing the thread to exit promptly.
 
-#### Fix: `immune.py` Rate Window Uses Monotonic Clock (#114)
+#### Fix: Container Name Can Exceed Docker's 63-Character Limit (#120)
 
-The sliding-window rate limiter in `is_allowed()` stored `time.time()` (wall-clock) timestamps in `_sender_timestamps` and compared against a new `time.time()` call. A positive NTP adjustment (clock jump forward) could cause the window to appear expired prematurely, allowing bursts. A negative adjustment (clock jump back) could make recent messages appear old, resetting the counter. The fix changes the in-memory window to use `time.monotonic()` throughout: both recording (`fresh.append(now_mono)`) and pruning (`now_mono - t < 60`). `_sender_timestamps` is entirely in-memory and not persisted, so this change is safe. The DB `last_seen` column in `immune_threats` continues to use `int(time.time())` (wall-clock) as before.
+Container names were built as `minion-{group_folder}-{13_digit_ms}-{6_hex}`. With a `group_folder` longer than 25 characters, the name exceeded Docker's limit, causing silent container creation failures. Fixed by truncating `group_folder` to 20 characters and using an 8-char UUID suffix (max total: 36 characters).
 
-#### Upgrade
+#### Fix: `schedule_value` Not Length-Validated Before Croniter (#121)
 
-```bash
-git pull
-# Host-only changes — no Docker image rebuild required
-# No DB schema change
-python run.py start
-```
+The `schedule_task` IPC handler passed `schedule_value` directly to `scheduler.add_task()` without a length guard. A pathologically long cron string could trigger catastrophic backtracking in `croniter`'s regex parser, hanging the scheduler. Fixed by rejecting `schedule_value` longer than 256 characters before any parsing occurs.
 
 ---
 

@@ -188,11 +188,21 @@ async def _handle_ipc(
 
     elif msg_type == "schedule_task":
         from . import scheduler
-        try:
-            await scheduler.add_task(group_jid, payload)
-        except ValueError as exc:
-            logger.error("IPC schedule_task: invalid schedule for group %s: %s", group_jid, exc)
-            await route_message(chat_jid, f"⚠️ schedule_task failed: {exc}", "")
+        # Fix #121: validate schedule_value length before passing to croniter to prevent ReDoS.
+        # A pathologically long cron string could cause catastrophic backtracking.
+        schedule_value = str(payload.get("schedule_value", ""))
+        if len(schedule_value) > 256:
+            logger.error(
+                "IPC schedule_task: schedule_value too long (%d chars) for group %s — rejected",
+                len(schedule_value), group_jid,
+            )
+            await route_message(chat_jid, "⚠️ schedule_task failed: schedule_value too long (max 256 chars)", "")
+        else:
+            try:
+                await scheduler.add_task(group_jid, payload)
+            except ValueError as exc:
+                logger.error("IPC schedule_task: invalid schedule for group %s: %s", group_jid, exc)
+                await route_message(chat_jid, f"⚠️ schedule_task failed: {exc}", "")
 
     elif msg_type == "dev_task":
         # DevEngine: start a development pipeline

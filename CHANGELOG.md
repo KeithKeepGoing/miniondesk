@@ -4,17 +4,18 @@ All notable changes to MinionDesk will be documented in this file.
 
 ---
 
-## [1.2.18] - 2026-03-12
+## [1.2.19] - 2026-03-12
 
 ### Fixed
-- **#110** `ipc.py`: Added `_MAX_IPC_FILE_SIZE = 1 MB` constant; IPC files exceeding the limit are skipped with a WARNING and deleted rather than read into memory — prevents OOM from oversized IPC payloads written by a runaway or malicious container
-- **#111** `scheduler.py`: Added `_in_flight_since` dict to track when each task was added to `_in_flight`; periodic cleanup (every 100 cycles) removes entries older than 1 hour with a WARNING log — prevents `_in_flight` leaking tasks that never completed due to a lost done callback
-- **#112** `dashboard.py`: Verified `_log_buffer[-100:]` slice in `/api/logs` endpoint is wrapped with `_log_lock`; emit() already uses the lock — no race condition on concurrent reads and writes to the log buffer
-- **#113** `ipc.py`: Added `_REQUEST_ID_RE = re.compile(r'^[a-zA-Z0-9_\-]{4,64}$')`; `web_search` IPC handler validates `request_id` against this pattern before constructing the result file path — prevents path traversal or filesystem manipulation via a crafted `request_id` value
-- **#114** `immune.py`: Sliding window rate limiter in `is_allowed()` now uses `time.monotonic()` instead of `time.time()` for the in-memory `_sender_timestamps` list — NTP clock adjustments and DST transitions no longer cause incorrect rate-limit window calculations; DB `last_seen` column continues to use wall-clock time
+- **#116** `main.py`: graceful shutdown now explicitly cancels all pending asyncio tasks after `gather()` returns — loops sleeping in `asyncio.sleep(60)` (health monitor) or `asyncio.sleep(300)` (orphan cleanup) exit immediately on SIGTERM instead of delaying shutdown by up to 5 minutes
+- **#117** `scheduler.py`: prune loop iterates over `list(_fail_counts.keys())` snapshot instead of directly iterating the dict — prevents `RuntimeError: dictionary changed size during iteration` when `_on_task_done` modifies `_fail_counts` concurrently during the 100-cycle pruning
+- **#118** `config.py`: `validate()` now rejects `IPC_POLL_INTERVAL < 0.01` seconds — a zero or negative value causes a 100% CPU busy-loop in the IPC watcher, making the host unresponsive
+- **#119** `dashboard.py`: `_run_server()` stores the `HTTPServer` instance in module-level `_dashboard_server`; `run_dashboard()` catches `asyncio.CancelledError` and calls `server.shutdown()` + `t.join(timeout=3)` so the daemon thread exits promptly on shutdown instead of hanging indefinitely
+- **#120** `runner.py`: container name now truncates `group_folder` to 20 characters and uses an 8-char UUID suffix — total name stays within Docker's 63-character limit; previously a long `group_folder` could silently cause Docker to reject container creation
+- **#121** `ipc.py`: `schedule_task` handler rejects `schedule_value` longer than 256 characters before passing to `scheduler.add_task()` / `croniter` — prevents potential ReDoS via pathological cron expressions
 
 ### Chore
-- Version bump 1.2.17 → 1.2.18
+- Version bump 1.2.18 → 1.2.19
 
 ---
 
