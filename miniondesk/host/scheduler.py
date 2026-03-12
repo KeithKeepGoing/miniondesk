@@ -217,7 +217,9 @@ async def run_scheduler(dispatch_fn, notify_fn=None) -> None:
             cycle_count += 1
             if cycle_count % 100 == 0:
                 existing_ids = {t["id"] for t in db.get_all_tasks()}
-                stale = [k for k in _fail_counts if k not in existing_ids]
+                # Fix #117: iterate over a snapshot of keys to prevent RuntimeError if
+                # another coroutine modifies _fail_counts concurrently during iteration.
+                stale = [k for k in list(_fail_counts.keys()) if k not in existing_ids]
                 for k in stale:
                     del _fail_counts[k]
                 if stale:

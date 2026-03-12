@@ -2,6 +2,38 @@
 
 ---
 
+## v1.2.18 — 2026-03-12
+
+### Shutdown Reliability, Concurrency, and Security Fixes (Issues #116–#121)
+
+This release addresses 6 issues across shutdown correctness, scheduler race conditions, config validation, dashboard lifecycle, container naming, and IPC input validation. No new features; all changes are hardening fixes.
+
+#### Fix: Asyncio Tasks Not Cancelled on Shutdown (#116)
+
+On SIGTERM the `asyncio.gather()` returned after `stop_event.wait()` completed, but remaining tasks (health monitor sleeping 60 s, orphan cleanup sleeping 300 s) continued until their sleep expired. On deployments with tight systemd `TimeoutStopSec`, this could cause force-kills. The fix adds an explicit task cancellation loop after `gather()` returns, with `await asyncio.gather(*pending, return_exceptions=True)` to collect all cancellations cleanly.
+
+#### Fix: Scheduler `_fail_counts` Dict Modification Race (#117)
+
+The `_fail_counts` pruning loop iterated directly over the dict (`for k in _fail_counts`) while `_on_task_done` callbacks could modify it concurrently, raising `RuntimeError: dictionary changed size during iteration`. Fixed by iterating over `list(_fail_counts.keys())` — a snapshot taken before the loop begins.
+
+#### Fix: `IPC_POLL_INTERVAL=0` Causes 100% CPU Busy-Loop (#118)
+
+`config.validate()` did not check `IPC_POLL_INTERVAL`. A value of 0 or negative causes the IPC watcher to spin without any sleep, exhausting a CPU core and making the host unresponsive. The fix adds a `< 0.01` lower-bound check in `validate()` which raises `ValueError` at startup.
+
+#### Fix: Dashboard Server Thread Hangs on Shutdown (#119)
+
+`run_dashboard()` looped `while t.is_alive(): await asyncio.sleep(5)`. The `HTTPServer` had no shutdown hook, so when the gather was cancelled the coroutine hung indefinitely. Fixed by storing the `HTTPServer` reference and calling `server.shutdown()` + `t.join(timeout=3)` inside the `CancelledError` handler, allowing the thread to exit promptly.
+
+#### Fix: Container Name Can Exceed Docker's 63-Character Limit (#120)
+
+Container names were built as `minion-{group_folder}-{13_digit_ms}-{6_hex}`. With a `group_folder` longer than 25 characters, the name exceeded Docker's limit, causing silent container creation failures. Fixed by truncating `group_folder` to 20 characters and using an 8-char UUID suffix (max total: 36 characters).
+
+#### Fix: `schedule_value` Not Length-Validated Before Croniter (#121)
+
+The `schedule_task` IPC handler passed `schedule_value` directly to `scheduler.add_task()` without a length guard. A pathologically long cron string could trigger catastrophic backtracking in `croniter`'s regex parser, hanging the scheduler. Fixed by rejecting `schedule_value` longer than 256 characters before any parsing occurs.
+
+---
+
 ## v1.2.17 — 2026-03-12
 
 ### Memory Leak, Orphan Cleanup, and Security Fixes (Tenth Round)

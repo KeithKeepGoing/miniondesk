@@ -168,9 +168,11 @@ async def run_minion(
     dynamic_tools_host.mkdir(parents=True, exist_ok=True)
     dynamic_tools_docker = _docker_path(str(dynamic_tools_host.resolve()))
 
-    # Include milliseconds + short UUID to avoid name collisions when multiple
-    # requests for the same group arrive within the same second.
-    container_name = f"minion-{group_folder}-{int(time.time() * 1000)}-{uuid.uuid4().hex[:6]}"
+    # Fix #120: Docker container names are limited to 63 characters.
+    # Truncate group_folder to 20 chars to ensure the full name stays within limit:
+    # "minion-" (7) + 20 + "-" (1) + 8 UUID hex chars = 36 chars max.
+    safe_folder = group_folder[:20]
+    container_name = f"minion-{safe_folder}-{uuid.uuid4().hex[:8]}"
 
     mounts = [
         f"{group_dir}:/workspace/group",

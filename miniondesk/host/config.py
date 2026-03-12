@@ -44,7 +44,7 @@ KNOWLEDGE_DIR = Path(_env("KNOWLEDGE_DIR", str(BASE_DIR / "knowledge")))
 DB_PATH    = DATA_DIR / "miniondesk.db"
 
 # Docker
-CONTAINER_IMAGE   = _env("CONTAINER_IMAGE", "miniondesk-agent:1.2.17")
+CONTAINER_IMAGE   = _env("CONTAINER_IMAGE", "miniondesk-agent:1.2.18")
 CONTAINER_TIMEOUT = _int_env("CONTAINER_TIMEOUT", 300)
 CONTAINER_MAX_FAILS = _int_env("CONTAINER_MAX_FAILS", 5)
 CONTAINER_FAIL_COOLDOWN = _float_env("CONTAINER_FAIL_COOLDOWN", 60.0)
@@ -126,6 +126,12 @@ def validate() -> None:
         errors.append(f"QUEUE_MAX_PER_GROUP must be > 0, got {QUEUE_MAX_PER_GROUP}")
     if MAX_PROMPT_LENGTH <= 0:
         errors.append(f"MAX_PROMPT_LENGTH must be > 0, got {MAX_PROMPT_LENGTH}")
+    # Fix #118: IPC_POLL_INTERVAL=0 or negative causes a 100% CPU busy-loop in the IPC watcher.
+    if IPC_POLL_INTERVAL < 0.01:
+        errors.append(
+            f"IPC_POLL_INTERVAL must be >= 0.01 seconds, got {IPC_POLL_INTERVAL}. "
+            "A value of 0 or negative causes 100% CPU usage."
+        )
 
     # Directory existence / writability checks
     if not MINIONS_DIR.exists():
