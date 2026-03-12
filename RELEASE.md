@@ -2,6 +2,48 @@
 
 ---
 
+## v1.3.0 — 2026-03-12
+
+### OpenClaw Three-Tier Memory System (Issue #127)
+
+This release adds a complete three-tier memory architecture inspired by OpenClaw/MemSearch, giving every group persistent, searchable memory across conversations.
+
+#### Hot Memory (8KB per group)
+
+A per-group `MEMORY.md`-equivalent stored in SQLite. Loaded on every container run and injected as a `[MEMORY]...[/MEMORY]` block in the payload. Enforces an 8KB UTF-8 limit with graceful truncation. Containers can update hot memory via the `memory_patch` JSON field in their output.
+
+#### Warm Memory (Daily Logs)
+
+After every successful assistant reply, a timestamped summary entry (`👤 user preview / 🤖 assistant preview`) is appended to the day's warm log. A `run_micro_sync()` function updates the hot memory sync timestamp every 3 hours. Warm logs older than 30 days are pruned by the weekly compound.
+
+#### Cold Memory — FTS5 Hybrid Search
+
+All warm log entries are indexed in a SQLite FTS5 virtual table (`group_warm_logs_fts`). The `memory_search` IPC command performs a hybrid search: BM25 keyword score (70%) combined with recency score (30%, decaying over 30 days). Returns up to 5 results ranked by combined score.
+
+#### Weekly Compound
+
+`run_weekly_compound()` prunes warm logs older than 30 days and records a summary note in hot memory marking the week and how many entries were pruned.
+
+#### New IPC Command: `memory_search`
+
+```json
+{"type": "memory_search", "query": "project deadline", "chatJid": "..."}
+```
+
+Returns formatted search results with date and content preview.
+
+#### Upgrade
+
+```bash
+git pull
+# Host-only changes — no Docker image rebuild required
+# DB schema migrates automatically on first run (new tables added)
+docker build -t miniondesk-agent:1.3.0 -f container/Dockerfile .
+python run.py start
+```
+
+---
+
 ## v1.2.20 — 2026-03-12
 
 ### Memory System and Evolution System Root Cause Fixes (Issues #124–#125)

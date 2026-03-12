@@ -120,8 +120,44 @@ def _migrate() -> None:
         UNIQUE(sender_jid, group_jid)
     );
     CREATE INDEX IF NOT EXISTS idx_immune ON immune_threats(sender_jid, group_jid);
+
+    CREATE TABLE IF NOT EXISTS group_hot_memory (
+        jid         TEXT PRIMARY KEY,
+        content     TEXT NOT NULL DEFAULT '',
+        updated_at  REAL NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS group_warm_logs (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        jid         TEXT NOT NULL,
+        log_date    TEXT NOT NULL,
+        content     TEXT NOT NULL,
+        created_at  REAL NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_warm_logs_jid_date ON group_warm_logs(jid, log_date);
+
+    CREATE TABLE IF NOT EXISTS group_memory_sync (
+        jid                  TEXT PRIMARY KEY,
+        last_micro_sync      REAL NOT NULL DEFAULT 0,
+        last_weekly_compound REAL NOT NULL DEFAULT 0
+    );
     """)
     conn.commit()
+    # FTS5 virtual table must be created outside executescript (DDL isolation)
+    try:
+        conn.execute(
+            """CREATE VIRTUAL TABLE IF NOT EXISTS group_warm_logs_fts USING fts5(
+                jid UNINDEXED,
+                log_date,
+                content,
+                content='group_warm_logs',
+                content_rowid='id'
+            )"""
+        )
+        conn.commit()
+    except Exception as _fts_exc:
+        import logging as _log
+        _log.getLogger(__name__).warning("group_warm_logs_fts creation failed: %s", _fts_exc)
 
 
 # ─── Groups ──────────────────────────────────────────────────────────────────
@@ -553,6 +589,100 @@ def get_dev_sessions(group_jid: str, limit: int = 20) -> list[dict]:
         (group_jid, limit),
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+# ─── Hot Memory ──────────────────────────────────────────────────────────────
+
+def get_hot_memory(jid: str) -> str:
+    conn = _conn()
+    row = conn.execute("SELECT content FROM group_hot_memory WHERE jid=?", (jid,)).fetchone()
+    return row[0] if row else ""
+
+
+def set_hot_memory(jid: str, content: str) -> None:
+    conn = _conn()
+    conn.execute(
+        """INSERT INTO group_hot_memory(jid,content,updated_at) VALUES(?,?,?)
+           ON CONFLICT(jid) DO UPDATE SET content=excluded.content,updated_at=excluded.updated_at""",
+        (jid, content, time.time()),
+    )
+    conn.commit()
+
+
+# ─── Warm Memory ─────────────────────────────────────────────────────────────
+
+def append_warm_log(jid: str, log_date: str, content: str) -> None:
+    conn = _conn()
+    conn.execute(
+        "INSERT INTO group_warm_logs(jid,log_date,content,created_at) VALUES(?,?,?,?)",
+        (jid, log_date, content, time.time()),
+    )
+    rowid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    try:
+        conn.execute(
+            "INSERT INTO group_warm_logs_fts(rowid,jid,log_date,content) VALUES(?,?,?,?)",
+            (rowid, jid, log_date, content),
+        )
+    except Exception:
+        pass  # FTS5 may not be available; warm log still persisted
+    conn.commit()
+
+
+def get_warm_logs_recent(jid: str, days: int = 1) -> list[dict]:
+    cutoff = time.time() - days * 86400
+    conn = _conn()
+    rows = conn.execute(
+        "SELECT id,log_date,content,created_at FROM group_warm_logs WHERE jid=? AND created_at>=? ORDER BY created_at DESC",
+        (jid, cutoff),
+    ).fetchall()
+    return [{"id": r[0], "log_date": r[1], "content": r[2], "created_at": r[3]} for r in rows]
+
+
+def delete_warm_logs_before(jid: str, cutoff_ts: float) -> int:
+    conn = _conn()
+    cur = conn.execute("DELETE FROM group_warm_logs WHERE jid=? AND created_at<?", (jid, cutoff_ts))
+    conn.commit()
+    return cur.rowcount
+
+
+def memory_fts_search(jid: str, query: str, limit: int = 10) -> list[dict]:
+    results = []
+    conn = _conn()
+    try:
+        rows = conn.execute(
+            """SELECT w.id,w.log_date,w.content,w.created_at,bm25(group_warm_logs_fts) as fs
+               FROM group_warm_logs_fts f
+               JOIN group_warm_logs w ON w.id=f.rowid
+               WHERE f.jid=? AND group_warm_logs_fts MATCH ?
+               ORDER BY fs LIMIT ?""",
+            (jid, query, limit),
+        ).fetchall()
+        for r in rows:
+            results.append({"source": "warm", "date": r[1], "content": r[2][:500],
+                             "created_at": r[3], "fts_score": abs(r[4]) if r[4] else 0.0})
+    except Exception:
+        pass
+    return results
+
+
+def record_micro_sync(jid: str) -> None:
+    conn = _conn()
+    conn.execute(
+        """INSERT INTO group_memory_sync(jid,last_micro_sync) VALUES(?,?)
+           ON CONFLICT(jid) DO UPDATE SET last_micro_sync=excluded.last_micro_sync""",
+        (jid, time.time()),
+    )
+    conn.commit()
+
+
+def record_weekly_compound(jid: str) -> None:
+    conn = _conn()
+    conn.execute(
+        """INSERT INTO group_memory_sync(jid,last_weekly_compound) VALUES(?,?)
+           ON CONFLICT(jid) DO UPDATE SET last_weekly_compound=excluded.last_weekly_compound""",
+        (jid, time.time()),
+    )
+    conn.commit()
 
 
 import atexit

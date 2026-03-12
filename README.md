@@ -2,7 +2,7 @@
 
 **企業 AI 助理框架** — 由 **Mini** 領軍的小小兵團隊，Docker 隔離，模型無關，資料完全自架。
 
-> *目前版本：v1.2.20*
+> *目前版本：v1.3.0*
 
 ```
 主助理 Mini + 部門小小兵（Kevin/Stuart/Bob）
@@ -19,11 +19,11 @@ Thread-safe：circuit breaker 與 genome 更新使用 lock / 原子 SQL
 架構改進：request_id 追蹤、schema 驗證、健康端點、輸入截斷
 安全加固：minion 名稱路徑驗證、container stdout 大小限制、SSE fan-out 修正
 背壓保護：GroupQueue 有界佇列、config 啟動驗證、ensure_future 全面替換
+v1.3.0 三層記憶系統：熱記憶（8KB MEMORY.md 每次對話注入）、暖記憶（對話後自動日誌 + micro sync）、冷記憶（FTS5 混合搜尋 BM25+時效性）、Weekly Compound 剪除舊日誌 (#127)
 v1.2.20 記憶與進化修正：歷史窗口 20→50、先存再送防競態、排程任務納入記憶、fitness 多維度指標、進化資料保留 200→1000、MIN_RUNS 3→1、get_history group_jid 驗證 (#124-#125)
 v1.2.19 關機可靠性修正：asyncio task 明確取消防止 shutdown 卡住、scheduler dict 競態修正、IPC_POLL_INTERVAL 零值防護、dashboard HTTPServer shutdown hook、container name 長度上限、schedule_value ReDoS 防護 (#116-#121)
 v1.2.18 安全與可靠性修正：IPC 檔案大小限制、scheduler _in_flight 過期清理、web_search request_id 驗證、immune 單調時鐘滑動視窗 (#110-#114)
 v1.2.17 記憶體洩漏修正：scheduler _fail_counts 定期清理、immune LRU 上限、orphan genome 清理、群組刪除清理資料夾、截斷通知、cron 邊界驗證 (#103-#108)
-v1.2.16 效能修正：dashboard N+1 genome 查詢改為單次批次查詢 (#97)
 ```
 
 ---
@@ -39,7 +39,7 @@ cp .env.example .env
 # 編輯 .env，設定至少一個 LLM provider
 
 # 3. 建立 Docker 映像檔
-docker build -t miniondesk-agent:1.2.20 -f container/Dockerfile .
+docker build -t miniondesk-agent:1.3.0 -f container/Dockerfile .
 
 # 4. 檢查設定
 python run.py check
@@ -50,7 +50,7 @@ python run.py start
 
 ---
 
-## Docker Container Capabilities (v1.2.20)
+## Docker Container Capabilities (v1.3.0)
 
 The agent container is production-ready with a full tool-use stack pre-installed:
 
