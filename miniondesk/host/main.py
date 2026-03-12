@@ -133,8 +133,8 @@ async def _run_and_reply(
 
     reply = result.get("result", "")
     if reply:
-        await route_message(jid, reply)
         db.add_message(jid, "assistant", reply)
+        await route_message(jid, reply)
 
 
 async def _dispatch_task(group_jid: str, prompt: str) -> None:
@@ -142,6 +142,9 @@ async def _dispatch_task(group_jid: str, prompt: str) -> None:
     group = db.get_group(group_jid)
     if not group:
         return
+    # Store the scheduled task prompt as a user message so it appears in
+    # conversation history and the minion has full context on replay.
+    db.add_message(group_jid, "user", prompt)
     await _run_and_reply(group_jid, group["folder"], group.get("minion", "mini"), prompt)
 
 
