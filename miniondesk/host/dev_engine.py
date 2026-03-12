@@ -184,6 +184,10 @@ Output in Markdown.""",
 
 # ─── DB helpers ───────────────────────────────────────────────────────────────
 
+_DEV_SESSIONS_MAX_PER_GROUP = 20       # keep only the most recent N sessions per group
+_DEV_SESSIONS_MAX_AGE_DAYS  = 7        # also prune sessions older than this many days
+
+
 def _init_dev_sessions_table() -> None:
     """Create dev_sessions table if not exists."""
     conn = db._conn()
@@ -202,6 +206,31 @@ def _init_dev_sessions_table() -> None:
     );
     CREATE INDEX IF NOT EXISTS idx_dev_jid ON dev_sessions(group_jid, created_at);
     """)
+    conn.commit()
+
+
+def _prune_dev_sessions(group_jid: str) -> None:
+    """Prune old dev_sessions rows to prevent unbounded DB growth.
+
+    Keeps only the most recent _DEV_SESSIONS_MAX_PER_GROUP sessions per group,
+    and also removes sessions older than _DEV_SESSIONS_MAX_AGE_DAYS days.
+    """
+    conn = db._conn()
+    cutoff = time.time() - _DEV_SESSIONS_MAX_AGE_DAYS * 86400
+    # Delete by age
+    conn.execute(
+        "DELETE FROM dev_sessions WHERE group_jid=? AND created_at < ?",
+        (group_jid, cutoff),
+    )
+    # Delete beyond per-group limit (keep most recent N)
+    conn.execute(
+        """DELETE FROM dev_sessions
+           WHERE group_jid=? AND session_id NOT IN (
+               SELECT session_id FROM dev_sessions
+               WHERE group_jid=? ORDER BY created_at DESC LIMIT ?
+           )""",
+        (group_jid, group_jid, _DEV_SESSIONS_MAX_PER_GROUP),
+    )
     conn.commit()
 
 
@@ -484,6 +513,12 @@ async def start_dev_session(
             return running["session_id"]
     except Exception as exc:
         logger.warning("DevEngine concurrency check failed: %s", exc)
+
+    # Prune old sessions before creating a new one to keep the table bounded.
+    try:
+        _prune_dev_sessions(group_jid)
+    except Exception as exc:
+        logger.warning("DevEngine: session pruning failed for group %s: %s", group_jid, exc)
 
     session_id = str(uuid.uuid4())[:8]
     session = {

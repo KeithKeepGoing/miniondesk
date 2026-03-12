@@ -13,6 +13,9 @@ from typing import Callable, Awaitable
 from . import config
 
 
+_WEB_SEARCH_MAX_RESPONSE_BYTES = 512 * 1024  # 512 KB — cap DDG response to prevent host OOM
+
+
 def _do_web_search(query: str) -> dict:
     """Perform a DuckDuckGo Instant Answer search on the host (has network access).
 
@@ -25,7 +28,9 @@ def _do_web_search(query: str) -> dict:
         encoded = urllib.parse.quote_plus(query)
         url = f"https://api.duckduckgo.com/?q={encoded}&format=json&no_redirect=1&no_html=1"
         with urllib.request.urlopen(url, timeout=8) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+            # Cap response size to prevent OOM from a runaway or malicious upstream.
+            raw = resp.read(_WEB_SEARCH_MAX_RESPONSE_BYTES)
+            data = json.loads(raw.decode("utf-8"))
         results = []
         if data.get("AbstractText"):
             results.append({
@@ -60,7 +65,13 @@ RouteFileFn    = Callable[[str, str, str], Awaitable[None]]
 
 
 def _resolve_container_path(container_path: str, group_folder: str) -> str | None:
-    """Map container-side path to host-side path."""
+    """Map container-side path to host-side path.
+
+    Only paths under /workspace/group/ or /workspace/project/ are permitted.
+    The previous fallback that returned raw host absolute paths has been removed:
+    a container-controlled send_file with an absolute path like /etc/passwd or
+    /home/user/.env would have caused arbitrary host file exfiltration via Telegram/Discord.
+    """
     if not group_folder:
         return None
     p = container_path.replace("\\", "/").strip()
@@ -71,8 +82,13 @@ def _resolve_container_path(container_path: str, group_folder: str) -> str | Non
     if p.startswith("/workspace/project/"):
         rel = p[len("/workspace/project/"):]
         return str(pathlib.Path(config.BASE_DIR) / rel)
-    # Fallback: return as-is
-    return p if os.path.exists(p) else None
+    # Any other path (including absolute host paths) is rejected to prevent
+    # container-controlled file exfiltration via IPC send_file payloads.
+    logger.warning(
+        "IPC send_file: rejected unrecognised container path %r for group %s",
+        container_path, group_folder,
+    )
+    return None
 
 
 async def watch_ipc(
