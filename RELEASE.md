@@ -2,7 +2,7 @@
 
 ---
 
-## v1.2.18 — 2026-03-12
+## v1.2.19 — 2026-03-12
 
 ### Shutdown Reliability, Concurrency, and Security Fixes (Issues #116–#121)
 

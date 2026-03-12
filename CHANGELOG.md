@@ -4,7 +4,7 @@ All notable changes to MinionDesk will be documented in this file.
 
 ---
 
-## [1.2.18] - 2026-03-12
+## [1.2.19] - 2026-03-12
 
 ### Fixed
 - **#116** `main.py`: graceful shutdown now explicitly cancels all pending asyncio tasks after `gather()` returns — loops sleeping in `asyncio.sleep(60)` (health monitor) or `asyncio.sleep(300)` (orphan cleanup) exit immediately on SIGTERM instead of delaying shutdown by up to 5 minutes
@@ -15,7 +15,7 @@ All notable changes to MinionDesk will be documented in this file.
 - **#121** `ipc.py`: `schedule_task` handler rejects `schedule_value` longer than 256 characters before passing to `scheduler.add_task()` / `croniter` — prevents potential ReDoS via pathological cron expressions
 
 ### Chore
-- Version bump 1.2.17 → 1.2.18
+- Version bump 1.2.18 → 1.2.19
 
 ---
 

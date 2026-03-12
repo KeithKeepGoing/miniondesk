@@ -2,7 +2,7 @@
 
 **企業 AI 助理框架** — 由 **Mini** 領軍的小小兵團隊，Docker 隔離，模型無關，資料完全自架。
 
-> *目前版本：v1.2.18*
+> *目前版本：v1.2.19*
 
 ```
 主助理 Mini + 部門小小兵（Kevin/Stuart/Bob）
@@ -21,9 +21,9 @@ Thread-safe：circuit breaker 與 genome 更新使用 lock / 原子 SQL
 背壓保護：GroupQueue 有界佇列、config 啟動驗證、ensure_future 全面替換
 v1.2.15 安全與穩定性：弱密碼啟動保護、group_folder 路徑穿越防護、tasks.status 索引、response_ms 箝制、指數退避重試、SSE 記憶體洩漏修正、統一時間戳來源
 v1.2.16 效能修正：dashboard N+1 genome 查詢改為單次批次查詢 (#97)
-v1.2.18 關機可靠性修正：asyncio task 明確取消防止 shutdown 卡住、scheduler dict 競態修正、IPC_POLL_INTERVAL 零值防護、dashboard HTTPServer shutdown hook、container name 長度上限、schedule_value ReDoS 防護 (#116-#121)
-v1.2.17 記憶體洩漏修正：scheduler _fail_counts 定期清理、immune LRU 上限、orphan genome 清理、群組刪除清理資料夾、截斷通知、cron 邊界驗證 (#103-#108)
+v1.2.19 關機可靠性修正：asyncio task 明確取消防止 shutdown 卡住、scheduler dict 競態修正、IPC_POLL_INTERVAL 零值防護、dashboard HTTPServer shutdown hook、container name 長度上限、schedule_value ReDoS 防護 (#116-#121)
 v1.2.18 安全與可靠性修正：IPC 檔案大小限制、scheduler _in_flight 過期清理、web_search request_id 驗證、immune 單調時鐘滑動視窗 (#110-#114)
+v1.2.17 記憶體洩漏修正：scheduler _fail_counts 定期清理、immune LRU 上限、orphan genome 清理、群組刪除清理資料夾、截斷通知、cron 邊界驗證 (#103-#108)
 ```
 
 ---
@@ -39,7 +39,7 @@ cp .env.example .env
 # 編輯 .env，設定至少一個 LLM provider
 
 # 3. 建立 Docker 映像檔
-docker build -t miniondesk-agent:1.2.18 -f container/Dockerfile .
+docker build -t miniondesk-agent:1.2.19 -f container/Dockerfile .
 
 # 4. 檢查設定
 python run.py check
@@ -50,7 +50,7 @@ python run.py start
 
 ---
 
-## Docker Container Capabilities (v1.2.18)
+## Docker Container Capabilities (v1.2.19)
 
 The agent container is production-ready with a full tool-use stack pre-installed:
 
