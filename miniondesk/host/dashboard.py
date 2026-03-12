@@ -51,11 +51,19 @@ class _QueueHandler(logging.Handler):
             with _log_lock:
                 _log_buffer.append(entry)
                 # Fan-out: deliver to every active SSE subscriber's dedicated queue
-                for sub_q in _sse_subscribers:
+                to_remove = []
+                for sub_q in list(_sse_subscribers):  # iterate copy
                     try:
                         sub_q.put_nowait(entry)
                     except queue.Full:
-                        pass  # Slow client — skip this entry rather than blocking
+                        to_remove.append(sub_q)  # dead reader — queue full
+                    except Exception:
+                        to_remove.append(sub_q)
+                for sub_q in to_remove:
+                    try:
+                        _sse_subscribers.remove(sub_q)
+                    except ValueError:
+                        pass
         except Exception:
             pass
 
