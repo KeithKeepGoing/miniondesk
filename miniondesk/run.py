@@ -3,11 +3,13 @@ import asyncio
 import click
 from rich.console import Console
 
+from miniondesk import __version__
+
 console = Console()
 
 
 @click.group()
-@click.version_option("1.0.0", prog_name="MinionDesk")
+@click.version_option(__version__, prog_name="MinionDesk")
 def cli():
     """MinionDesk — Enterprise AI assistant framework."""
 

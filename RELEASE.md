@@ -2,6 +2,50 @@
 
 ---
 
+## v1.2.9 — 2026-03-12
+
+### Reliability, Correctness, and Functional Fixes (Sixth Round)
+
+本次版本修正 9 個在 v1.2.8 後發現的新問題，涵蓋 DB 雙重連線呼叫延伸修正、DELETE 事務管理錯誤、IPC kb_search 型別轉換崩潰、基因組樣式索引錯誤、容器 JSON 解析錯誤遺漏輸出標記、provider KeyError、排程雙重觸發、web-search 技能完全失效（因容器無網路存取）、以及版本號不一致。
+
+#### Fix 1: `update_task_run()` 和 `log_evolution()` 雙重 `_conn()` 呼叫（#54）
+
+`update_task_run()` 和 `log_evolution()` 分別對 `execute()` 和 `commit()` 各自呼叫一次 `_conn()`，若連線物件在兩次呼叫之間被重置，commit 可能無效化。改為在函式開頭指派 `conn = _conn()` 並重複使用。
+
+#### Fix 2: `delete_group()` 使用原始字串 BEGIN/COMMIT/ROLLBACK（#59）
+
+`delete_group()` 使用 `conn.execute("BEGIN")` 等原始字串，若呼叫時已有隱含事務開啟（WAL 模式常見），會拋出 `OperationalError: cannot start a transaction within a transaction`。改為使用 SQLite SAVEPOINT/RELEASE/ROLLBACK TO，支援重入式事務。
+
+#### Fix 3: `ipc.py` kb_search `limit` 非整數值導致未處理 ValueError（#56）
+
+`int(payload.get("limit", 5))` 在收到非整數值時拋出 `ValueError`，傳播至外層 `except Exception` 導致 IPC 訊息被標記已處理並刪除（靜默丟失）。改為 try/except 包裹並預設值 5。
+
+#### Fix 4: `evolution.py` `STYLE_ORDER.index()` 未知樣式值崩潰（#57）
+
+若 genome 表格中存有 STYLE_ORDER 以外的 `response_style` 值，`list.index()` 拋出 `ValueError` 並阻斷當輪所有群組的進化。改為先檢查成員資格，未知值記錄 warning 後重置為 `"balanced"`。
+
+#### Fix 5: 容器 JSON 解析失敗時遺漏輸出標記（#60）
+
+`json.JSONDecodeError` 路徑直接 `print(json.dumps(result))` 而不加輸出標記，主機解析器只看到「No valid output from container」而無法獲得實際錯誤訊息。改為加入 `<<<MINIONDESK_OUTPUT_START>>>` / `<<<MINIONDESK_OUTPUT_END>>>` 標記。
+
+#### Fix 6: ClaudeProvider/GeminiProvider 使用 `os.environ[KEY]` 拋出 KeyError（#61）
+
+兩個 provider 使用括號存取 `os.environ["KEY"]`，若環境變數在 `auto.py` 檢查後消失（例如 process supervisor 清除 env），會拋出未處理的 `KeyError` 且沒有輸出標記。改為 `os.getenv("KEY", "")`，讓 SDK 自行提供清晰的認證錯誤。
+
+#### Fix 7: 排程器短間隔任務雙重觸發（#62）
+
+`db.update_task_run()` 在 `asyncio.create_task()` 後立即呼叫（容器尚未完成），下一個 10 秒輪詢週期若任務已到期（容器比間隔慢），會再次觸發。新增 `_in_flight` 集合追蹤進行中的任務，重複輪詢時跳過。
+
+#### Fix 8: web-search 技能在容器無網路時完全失效（#55）
+
+容器以 `--network none` 啟動，web_search 工具直接呼叫 DuckDuckGo API 必然失敗。改為透過 IPC 機制將搜尋請求路由至主機端執行，主機完成 HTTP 呼叫後將結果寫回群組 IPC 目錄，容器輪詢讀取。
+
+#### Fix 9: 版本號不一致（#58）
+
+`pyproject.toml` 版本為 `1.0.0`，`miniondesk/run.py` CLI `--version` 硬編碼為 `"1.0.0"`，均未反映實際版本。更新 `pyproject.toml` 至 `1.2.9`，`run.py` 改為動態讀取 `__version__`。
+
+---
+
 ## v1.2.8 — 2026-03-12
 
 ### Reliability, Correctness, and Security Improvements (Fifth Round)

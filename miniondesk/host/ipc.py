@@ -12,6 +12,42 @@ from typing import Callable, Awaitable
 
 from . import config
 
+
+def _do_web_search(query: str) -> dict:
+    """Perform a DuckDuckGo Instant Answer search on the host (has network access).
+
+    Called from an executor so it does not block the event loop.
+    Returns a dict suitable for JSON serialisation back to the container.
+    """
+    import urllib.request
+    import urllib.parse
+    try:
+        encoded = urllib.parse.quote_plus(query)
+        url = f"https://api.duckduckgo.com/?q={encoded}&format=json&no_redirect=1&no_html=1"
+        with urllib.request.urlopen(url, timeout=8) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        results = []
+        if data.get("AbstractText"):
+            results.append({
+                "type": "abstract",
+                "text": data["AbstractText"],
+                "source": data.get("AbstractSource", ""),
+                "url": data.get("AbstractURL", ""),
+            })
+        for topic in data.get("RelatedTopics", [])[:5]:
+            if isinstance(topic, dict) and topic.get("Text"):
+                results.append({
+                    "type": "topic",
+                    "text": topic["Text"],
+                    "url": topic.get("FirstURL", ""),
+                })
+        if not results:
+            return {"results": [], "note": "No instant answer found. Try a more specific query."}
+        return {"results": results}
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
 # Bounded deque used as an LRU cache for processed IPC file paths.
 # Prevents the set from growing unbounded on long-running instances.
 # Max capacity: 10,000 entries (well above any realistic burst).
@@ -188,7 +224,10 @@ async def _handle_ipc(
         # Handle knowledge base search requested by container enterprise tool
         from .enterprise.knowledge_base import search
         query = payload.get("query", "")
-        limit = int(payload.get("limit", 5))
+        try:
+            limit = max(1, min(50, int(payload.get("limit", 5) or 5)))
+        except (ValueError, TypeError):
+            limit = 5
         if query:
             try:
                 results = search(query, limit=limit)
@@ -233,6 +272,30 @@ async def _handle_ipc(
                 await route_message(chat_jid, f"⚠️ Calendar check failed: {exc}", "")
         else:
             await route_message(chat_jid, "⚠️ calendar_check: missing user or date", "")
+
+    elif msg_type == "web_search":
+        # Web search requested by container web_search tool.
+        # Containers run with --network none, so the host performs the HTTP
+        # call and writes the result back to the IPC dir for the container to
+        # read via polling (see skills/web-search dynamic tool).
+        query = payload.get("query", "").strip()
+        request_id = payload.get("request_id", "")
+        if query and request_id:
+            loop = asyncio.get_event_loop()
+            result_data = await loop.run_in_executor(None, _do_web_search, query)
+            # Write result file into the group's IPC dir for the container to pick up
+            ipc_dir = pathlib.Path(config.GROUPS_DIR) / group_folder / ".ipc"
+            ipc_dir.mkdir(parents=True, exist_ok=True)
+            result_path = ipc_dir / f"ws_result_{request_id}.json"
+            try:
+                result_path.write_text(
+                    json.dumps(result_data, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+            except Exception as exc:
+                logger.error("IPC web_search: failed to write result: %s", exc)
+        else:
+            logger.warning("IPC web_search: missing query or request_id")
 
     else:
         logger.warning("Unknown IPC type: %s", msg_type)

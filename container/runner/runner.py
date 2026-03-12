@@ -188,7 +188,9 @@ async def main():
         payload = json.loads(raw)
     except json.JSONDecodeError as exc:
         result = {"status": "error", "result": f"Invalid JSON input: {exc}", "turns": 0}
+        print("<<<MINIONDESK_OUTPUT_START>>>")
         print(json.dumps(result, ensure_ascii=False))
+        print("<<<MINIONDESK_OUTPUT_END>>>")
         sys.exit(1)
 
     result = await run_minion(payload)

@@ -4,6 +4,25 @@ All notable changes to MinionDesk will be documented in this file.
 
 ---
 
+## [1.2.9] - 2026-03-12
+
+### Reliability, Correctness, and Functional Fixes (Sixth Round)
+
+- `db.py`: Fixed `update_task_run()` and `log_evolution()` double `_conn()` calls — capture connection once with `conn = _conn()` and reuse for both execute and commit to eliminate the risk of committing on a different connection object (#54)
+- `db.py`: Fixed `delete_group()` using raw `BEGIN`/`COMMIT`/`ROLLBACK` strings — replaced with SQLite `SAVEPOINT`/`RELEASE`/`ROLLBACK TO` which is re-entrant-safe and avoids `OperationalError: cannot start a transaction within a transaction` under concurrent access (#59)
+- `ipc.py`: Fixed unhandled `ValueError` crash when `kb_search` IPC payload contains a non-integer `limit` field — now wrapped in try/except with a safe `max(1, min(50, int(...)))` clamp and default of 5 (#56)
+- `evolution.py`: Fixed unhandled `ValueError` from `STYLE_ORDER.index()` when genome table contains an unknown `response_style` value — now checks membership first and logs a warning before resetting to `"balanced"`, preventing the evolution loop from stalling for all groups (#57)
+- `container/runner/runner.py`: Fixed `json.JSONDecodeError` handler missing `<<<MINIONDESK_OUTPUT_START>>>` / `<<<MINIONDESK_OUTPUT_END>>>` markers — host-side parser now receives a properly-wrapped error result instead of a generic "No valid output from container" (#60)
+- `providers/claude.py` + `providers/gemini.py`: Replaced `os.environ["KEY"]` (raises `KeyError`) with `os.getenv("KEY", "")` so missing env vars produce a clear authentication error from the SDK rather than an unhandled exception that bypasses output markers (#61)
+- `scheduler.py`: Fixed double-fire of recurring tasks when container response is slower than the task interval — added `_in_flight` set; task is skipped on re-poll if still running, and removed from the set in the done callback (#62)
+- `skills/web-search`: Fixed web-search skill tool always failing because containers run with `--network none` — tool now routes requests through IPC to the host process (which has network access); host performs the DuckDuckGo HTTP call and writes the result back to the group's IPC dir for the container to read (#55)
+- `config.py`: Default `CONTAINER_IMAGE` updated to `miniondesk-agent:1.2.9`
+- `pyproject.toml`: Version updated to `1.2.9` (was stale at `1.0.0`)
+- `miniondesk/run.py`: CLI `--version` now reads `__version__` dynamically instead of hard-coding `"1.0.0"` (#58)
+- `miniondesk/__init__.py`: Version bumped to 1.2.9
+
+---
+
 ## [1.2.8] - 2026-03-12
 
 ### Reliability, Correctness, and Security Improvements (Fifth Round)

@@ -150,7 +150,10 @@ def get_all_groups() -> list[dict]:
 def delete_group(jid: str) -> None:
     """Delete a group and ALL related data (messages, tasks, genome, evolution, immune) atomically."""
     conn = _conn()
-    conn.execute("BEGIN")
+    # Use a savepoint so the transaction is re-entrant-safe even if a parent
+    # transaction is already open (avoids "cannot start a transaction within a
+    # transaction" OperationalError from raw BEGIN strings).
+    conn.execute("SAVEPOINT delete_group")
     try:
         for table in (
             "messages", "tasks", "genome", "evolution_runs",
@@ -163,9 +166,11 @@ def delete_group(jid: str) -> None:
         except Exception:
             pass
         conn.execute("DELETE FROM groups WHERE jid=?", (jid,))
-        conn.execute("COMMIT")
+        conn.execute("RELEASE SAVEPOINT delete_group")
+        conn.commit()
     except Exception:
-        conn.execute("ROLLBACK")
+        conn.execute("ROLLBACK TO SAVEPOINT delete_group")
+        conn.execute("RELEASE SAVEPOINT delete_group")
         raise
 
 
@@ -213,11 +218,12 @@ def get_due_tasks() -> list[dict]:
 
 
 def update_task_run(task_id: str, next_run: int) -> None:
-    _conn().execute(
+    conn = _conn()
+    conn.execute(
         "UPDATE tasks SET last_run=?, next_run=? WHERE id=?",
         (int(time.time()), next_run, task_id),
     )
-    _conn().commit()
+    conn.commit()
 
 
 def delete_task(task_id: str) -> None:
@@ -371,14 +377,15 @@ def log_evolution(
     after: dict,
 ) -> None:
     import json as _json
-    _conn().execute(
+    conn = _conn()
+    conn.execute(
         """INSERT INTO evolution_log(group_jid, generation, fitness_score, avg_response_ms, genome_before, genome_after)
            VALUES(?,?,?,?,?,?)""",
         (group_jid, generation, fitness, avg_ms,
          _json.dumps(before, ensure_ascii=False),
          _json.dumps(after, ensure_ascii=False)),
     )
-    _conn().commit()
+    conn.commit()
 
 
 # ─── Immune system ────────────────────────────────────────────────────────────
