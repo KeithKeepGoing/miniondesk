@@ -29,15 +29,20 @@ def is_allowed(sender_jid: str, group_jid: str) -> bool:
     # In-memory rate limit (sliding window, 60s)
     now = time.time()
     window_key = f"{sender_jid}:{group_jid}"
-    timestamps = _sender_timestamps[window_key]
+    timestamps = _sender_timestamps.get(window_key, [])
 
-    # Remove old entries; delete the key entirely when empty to prevent unbounded dict growth
+    # Remove timestamps older than the 60s window first, then append current time.
+    # Evict the key entirely when the filtered list is empty (sender has been quiet
+    # for > 60s) to prevent the dict from growing without bound over time.
     fresh = [t for t in timestamps if now - t < 60]
-    fresh.append(now)
-    if fresh:
-        _sender_timestamps[window_key] = fresh
-    elif window_key in _sender_timestamps:
-        del _sender_timestamps[window_key]
+    if not fresh:
+        # Sender had no recent activity — clean up the key, then count just this message
+        if window_key in _sender_timestamps:
+            del _sender_timestamps[window_key]
+        fresh = [now]
+    else:
+        fresh.append(now)
+    _sender_timestamps[window_key] = fresh
     count = len(fresh)
 
     if count > BLOCK_THRESHOLD:

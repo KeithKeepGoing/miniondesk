@@ -263,14 +263,23 @@ def uninstall_skill(skill_name: str) -> tuple[bool, str]:
     return True, f"✅ Skill '{skill_name}' uninstalled ({len(removed)} files removed)"
 
 
+# Maximum combined size of all injected skill docs (bytes, UTF-8 encoded).
+# Prevents unbounded system prompt inflation when many large skills are installed.
+_SKILL_DOCS_MAX_BYTES = 32 * 1024  # 32 KB
+
+
 def get_installed_skill_docs(group_jid: str | None = None) -> str:
     """
     Return combined SKILL.md content for all installed skills.
     This gets injected into the container system prompt.
+
+    The combined result is capped at _SKILL_DOCS_MAX_BYTES to prevent
+    unbounded system prompt growth when many or large skills are installed.
     """
     registry = _load_registry()
     base_dir = Path(config.BASE_DIR)
     docs = []
+    total_bytes = 0
 
     for name, info in registry.items():
         for rel_path in info.get("adds", []):
@@ -278,6 +287,16 @@ def get_installed_skill_docs(group_jid: str | None = None) -> str:
                 p = base_dir / rel_path
                 if p.exists():
                     content = p.read_text(encoding="utf-8").strip()
-                    docs.append(f"### Skill: {name}\n{content}")
+                    entry = f"### Skill: {name}\n{content}"
+                    entry_bytes = len(entry.encode("utf-8"))
+                    if total_bytes + entry_bytes > _SKILL_DOCS_MAX_BYTES:
+                        logger.warning(
+                            "Skill docs size limit reached (%d bytes) — "
+                            "skipping skill '%s' docs to prevent system prompt overflow",
+                            _SKILL_DOCS_MAX_BYTES, name,
+                        )
+                        continue
+                    docs.append(entry)
+                    total_bytes += entry_bytes
 
     return "\n\n".join(docs)

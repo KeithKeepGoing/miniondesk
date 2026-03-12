@@ -4,6 +4,22 @@ All notable changes to MinionDesk will be documented in this file.
 
 ---
 
+## [1.2.11] - 2026-03-12
+
+### Reliability, Memory, and Usability Fixes (Eighth Round)
+
+- `db.py`: Fixed `delete_task()` double `_conn()` calls — execute and commit now reuse the same connection object captured once as `conn = _conn()`, matching the pattern enforced for all other multi-step DB functions since v1.2.9 (#72)
+- `immune.py`: Fixed `_sender_timestamps` in-memory dict growing without bound — the old logic appended `now` to `fresh` before the empty-check, making the eviction branch unreachable; now filters old timestamps first, evicts the key if the result is empty, then appends `now`, so inactive senders are correctly removed from memory (#73)
+- `db.py`: Added `immune_prune_old_rows()` to delete non-blocked `immune_threats` rows older than 7 days; called from the health monitor loop every 60s — prevents unbounded table growth in high-traffic deployments with many unique senders (#74)
+- `db.py` / `ipc.py`: Added `unblock_sender` IPC message type that calls `db.immune_unblock()` — previously `immune_unblock()` existed but was never reachable from any IPC/admin path; auto-blocked senders could only be unblocked via direct DB access (#75)
+- `skills_engine.py`: `get_installed_skill_docs()` now caps combined skill doc injection at 32 KB (`_SKILL_DOCS_MAX_BYTES`); skills that would exceed the cap are skipped with a WARNING log — prevents unbounded system prompt inflation when many or large skills are installed (#76)
+- `scheduler.py`: `run_scheduler()` now accepts an optional `notify_fn` argument; when a once-task dispatch raises an exception the group is notified with the error and prompt preview; recurring tasks that are suspended after `_MAX_CONSECUTIVE_FAILURES` also generate a group notification (#77)
+- `queue.py`: Added `GroupQueue.shutdown()` method that cancels all worker asyncio.Tasks and logs the count of pending-but-dropped items; called from `run_host()` before stopping channels on SIGTERM, preventing silent task abandonment at shutdown (#78)
+- `config.py`: Default `CONTAINER_IMAGE` updated to `miniondesk-agent:1.2.11`
+- `miniondesk/__init__.py`: Version bumped to 1.2.11
+
+---
+
 ## [1.2.10] - 2026-03-12
 
 ### Reliability, Security, and Resource Management Fixes (Seventh Round)

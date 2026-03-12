@@ -161,6 +161,14 @@ async def _health_monitor_loop() -> None:
                 conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
             except Exception as wal_exc:
                 logger.debug("WAL checkpoint error: %s", wal_exc)
+            # Prune stale non-blocked immune_threats rows (older than 7 days).
+            # Prevents unbounded table growth in high-traffic deployments.
+            try:
+                pruned = db.immune_prune_old_rows()
+                if pruned:
+                    logger.info("Health: pruned %d stale immune_threats rows", pruned)
+            except Exception as prune_exc:
+                logger.debug("immune_threats prune error: %s", prune_exc)
         except Exception as exc:
             # Elevated to WARNING so health errors are visible at default log level
             logger.warning("Health monitor error: %s", exc)
@@ -246,7 +254,7 @@ async def run_host() -> None:
     # watch_ipc) immediately cancels the entire gather — taking down the whole host process.
     results = await asyncio.gather(
         watch_ipc(route_message, route_file),
-        run_scheduler(_dispatch_task),
+        run_scheduler(_dispatch_task, notify_fn=route_message),
         evolution_loop(),
         _health_monitor_loop(),
         _orphan_cleanup_loop(),
@@ -264,6 +272,11 @@ async def run_host() -> None:
             logger.error("Sub-coroutine '%s' exited with exception: %s", name, res)
 
     # Cleanup
+    logger.info("Stopping group queues...")
+    try:
+        await get_queue().shutdown()
+    except Exception as exc:
+        logger.warning("GroupQueue shutdown error: %s", exc)
     logger.info("Stopping channels...")
     for ch in all_channels():
         await ch.stop()
