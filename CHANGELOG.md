@@ -4,6 +4,26 @@ All notable changes to MinionDesk will be documented in this file.
 
 ---
 
+## [1.2.17] - 2026-03-12
+
+### Fixed
+- **#103** `scheduler.py`: `_fail_counts` dict pruned every 100 cycles — removes entries for task IDs that no longer exist in the DB; hard-capped at 1,000 entries to prevent unbounded memory growth
+- **#104** `db.py`: Added `cleanup_orphan_genomes()` — deletes genome rows for groups that no longer exist; called from the health monitor loop to prevent orphan accumulation after group deletion
+- **#105** `immune.py`: `_sender_timestamps` changed from `defaultdict(list)` to an `OrderedDict`-based LRU pattern capped at 10,000 entries; oldest entry evicted when capacity is reached
+- **#106** `db.py`: `delete_group()` now removes the group's filesystem folder after a successful DB deletion; uses `shutil.rmtree` with a warning log on failure
+- **#107** `main.py`: After prompt truncation, sends a user-visible notification (⚠️ 訊息過長) with the original and truncated lengths so the user knows their message was cut
+- **#108** `scheduler.py`: Added `_validate_cron()` which checks each cron field against normal bounds (minute 0-59, hour 0-23, etc.) to prevent ReDoS via malformed expressions; `once` schedules more than 10 years in the future are now rejected
+
+### Added
+- `db.cleanup_orphan_genomes()` — deletes genome rows whose `group_jid` has no matching entry in the `groups` table
+- `db.get_all_tasks()` — returns all task rows (all statuses) in a single SELECT query
+- `scheduler._validate_cron()` — bounds-checking wrapper around `croniter.is_valid()`
+
+### Chore
+- Version bump 1.2.16 → 1.2.17
+
+---
+
 ## [1.2.16] - 2026-03-12
 
 ### Fixed

@@ -2,7 +2,7 @@
 from __future__ import annotations
 import logging
 import time
-from collections import defaultdict
+from collections import OrderedDict
 
 from . import db
 
@@ -13,7 +13,20 @@ MAX_MSGS_PER_MINUTE = 15
 BLOCK_THRESHOLD = 30  # Auto-block after this many messages in 60s
 
 # In-memory sliding window (supplement to DB)
-_sender_timestamps: dict[str, list[float]] = defaultdict(list)
+# Uses OrderedDict-based LRU pattern capped at _MAX_SENDER_ENTRIES to prevent
+# unbounded memory growth when there are many unique senders over time.
+_MAX_SENDER_ENTRIES = 10_000
+_sender_timestamps: OrderedDict[str, list] = OrderedDict()
+
+
+def _get_sender_timestamps(key: str) -> list:
+    """Get timestamps for sender key, evicting oldest entry if at capacity."""
+    if key not in _sender_timestamps:
+        if len(_sender_timestamps) >= _MAX_SENDER_ENTRIES:
+            _sender_timestamps.popitem(last=False)  # evict oldest
+        _sender_timestamps[key] = []
+    _sender_timestamps.move_to_end(key)
+    return _sender_timestamps[key]
 
 
 def is_allowed(sender_jid: str, group_jid: str) -> bool:
@@ -29,7 +42,7 @@ def is_allowed(sender_jid: str, group_jid: str) -> bool:
     # In-memory rate limit (sliding window, 60s)
     now = time.time()
     window_key = f"{sender_jid}:{group_jid}"
-    timestamps = _sender_timestamps.get(window_key, [])
+    timestamps = _get_sender_timestamps(window_key)
 
     # Remove timestamps older than the 60s window first, then append current time.
     # Evict the key entirely when the filtered list is empty (sender has been quiet

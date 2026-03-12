@@ -2,6 +2,47 @@
 
 ---
 
+## v1.2.17 — 2026-03-12
+
+### Memory Leak, Orphan Cleanup, and Security Fixes (Tenth Round)
+
+This release addresses 6 issues spanning memory leak prevention, filesystem cleanup on group deletion, user-visible truncation notifications, and scheduler security hardening. No new features; all changes are fixes and hardening.
+
+#### Fix: `scheduler.py` `_fail_counts` Dict Memory Leak (#103)
+
+`run_scheduler()` kept an in-memory `_fail_counts` dict tracking consecutive failures per task ID. Deleted tasks were never removed from the dict, causing unbounded memory growth on long-running instances with many transient tasks. The fix prunes stale entries (task IDs no longer present in the DB) every 100 scheduler cycles and hard-caps the dict at 1,000 entries, evicting entries with the lowest fail counts when the cap is exceeded.
+
+#### Fix: Orphan Genome Rows After Group Deletion (#104)
+
+`genome` rows were not being cleaned up when the corresponding group did not exist in the DB (e.g. after direct DB manipulation or a failed cascade delete). The fix adds `db.cleanup_orphan_genomes()`, which issues a single `DELETE FROM genome WHERE group_jid NOT IN (SELECT jid FROM groups)`, and calls it from the health monitor loop alongside the WAL checkpoint and immune prune.
+
+#### Fix: `immune.py` `_sender_timestamps` Unbounded Growth (#105)
+
+`_sender_timestamps` was a `defaultdict(list)` with no upper bound on the number of keys. A deployment receiving messages from many unique senders over time would accumulate one key per sender indefinitely. The fix replaces it with an `OrderedDict`-based LRU pattern capped at 10,000 entries. When a new key would exceed the cap, the oldest key is evicted with `popitem(last=False)`.
+
+#### Fix: `delete_group()` Does Not Remove Filesystem Folder (#106)
+
+`db.delete_group()` removed all DB rows for a group atomically but left the group's folder on disk (containing `CLAUDE.md`, conversation exports, and other files). The fix reads the group's `folder` value from the DB before the delete transaction, then after a successful commit calls `shutil.rmtree()` on `GROUPS_DIR / folder`. Filesystem errors are caught and logged as warnings so a missing or read-only folder does not prevent DB cleanup.
+
+#### Fix: Prompt Truncation Is Silent (#107)
+
+When a user's message exceeded `MAX_PROMPT_LENGTH`, the host logged a warning and silently truncated the text. The user had no indication their message was cut. The fix sends a notification to the group immediately after truncation: `⚠️ 訊息過長（N 字元），已截斷至 M 字元。`
+
+#### Fix: Cron Expression Bounds Validation (#108)
+
+`_compute_next_run()` passed expressions directly to `croniter.is_valid()`, which does not check whether numeric field values are within sane bounds. A crafted expression with very large numbers could cause ReDoS. The fix adds `_validate_cron()`, which calls `croniter.is_valid()` first and then checks each field token against standard cron limits (minute 0-59, hour 0-23, day-of-month 1-31, month 1-12, day-of-week 0-7). Named values (`MON`, `JAN`, etc.) are accepted without numeric bounds checking. For `once` schedule type, datetimes more than 10 years in the future are rejected to prevent accidentally scheduling a task in year 9999.
+
+#### Upgrade
+
+```bash
+git pull
+# Host-only changes — no Docker image rebuild required
+# No DB schema change
+python run.py start
+```
+
+---
+
 ## v1.2.16 — 2026-03-12
 
 ### Performance Fix: Dashboard N+1 Genome Query (Issue #97)

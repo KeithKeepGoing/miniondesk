@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import pathlib
+import shutil
 import sqlite3
 import threading
 import time
@@ -152,7 +154,12 @@ def get_all_groups() -> list[dict]:
 
 def delete_group(jid: str) -> None:
     """Delete a group and ALL related data (messages, tasks, genome, evolution, immune) atomically."""
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
     conn = _conn()
+    # Look up the folder before deletion so we can clean up the filesystem afterward
+    row = conn.execute("SELECT folder FROM groups WHERE jid=?", (jid,)).fetchone()
+    folder = row["folder"] if row else None
     # Use a savepoint so the transaction is re-entrant-safe even if a parent
     # transaction is already open (avoids "cannot start a transaction within a
     # transaction" OperationalError from raw BEGIN strings).
@@ -175,6 +182,16 @@ def delete_group(jid: str) -> None:
         conn.execute("ROLLBACK TO SAVEPOINT delete_group")
         conn.execute("RELEASE SAVEPOINT delete_group")
         raise
+    # Clean up group folder after successful DB deletion
+    if folder:
+        groups_dir = pathlib.Path(os.environ.get("GROUPS_DIR", "groups"))
+        group_path = groups_dir / folder
+        if group_path.exists() and group_path.is_dir():
+            try:
+                shutil.rmtree(group_path)
+                _log.info("Deleted group folder: %s", group_path)
+            except Exception as e:
+                _log.warning("Could not delete group folder %s: %s", group_path, e)
 
 
 # ─── Messages ────────────────────────────────────────────────────────────────
@@ -252,6 +269,12 @@ def get_tasks_for_group(group_jid: str) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def get_all_tasks() -> list[dict]:
+    """Return all tasks (all statuses) as a list of dicts."""
+    rows = _conn().execute("SELECT * FROM tasks").fetchall()
+    return [dict(r) for r in rows]
+
+
 # ─── Genome ───────────────────────────────────────────────────────────────────
 
 def get_genome(group_jid: str) -> dict:
@@ -265,6 +288,16 @@ def get_genome(group_jid: str) -> dict:
         "technical_depth": 0.5,
         "fitness_score": 0.5,
     }
+
+
+def cleanup_orphan_genomes() -> int:
+    """Delete genome rows for groups that no longer exist. Returns count deleted."""
+    conn = _conn()
+    cur = conn.execute(
+        "DELETE FROM genome WHERE group_jid NOT IN (SELECT jid FROM groups)"
+    )
+    conn.commit()
+    return cur.rowcount
 
 
 def get_all_genomes() -> dict[str, dict]:
