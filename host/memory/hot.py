@@ -1,0 +1,21 @@
+"""Hot memory management — per-group MEMORY.md (8KB limit)."""
+from __future__ import annotations
+import logging
+import time
+from .. import db
+
+log = logging.getLogger(__name__)
+HOT_MEMORY_MAX_BYTES = 8 * 1024  # 8KB
+
+
+def get_hot_memory(jid: str) -> str:
+    return db.get_hot_memory(jid) or ""
+
+
+def update_hot_memory(jid: str, content: str) -> None:
+    encoded = content.encode("utf-8")
+    if len(encoded) > HOT_MEMORY_MAX_BYTES:
+        content = encoded[:HOT_MEMORY_MAX_BYTES].decode("utf-8", errors="ignore")
+        log.warning("hot_memory: truncated to 8KB for jid=%s", jid)
+    db.set_hot_memory(jid, content)
+    log.debug("hot_memory: updated for jid=%s (%d bytes)", jid, len(content.encode()))
