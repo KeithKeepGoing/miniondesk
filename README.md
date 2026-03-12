@@ -2,7 +2,7 @@
 
 **企業 AI 助理框架** — 由 **Mini** 領軍的小小兵團隊，Docker 隔離，模型無關，資料完全自架。
 
-> *目前版本：v1.2.13*
+> *目前版本：v1.2.14*
 
 ```
 主助理 Mini + 部門小小兵（Kevin/Stuart/Bob）
@@ -34,7 +34,7 @@ cp .env.example .env
 # 編輯 .env，設定至少一個 LLM provider
 
 # 3. 建立 Docker 映像檔
-docker build -t miniondesk-agent:latest ./container
+docker build -t miniondesk-agent:1.2.14 -f container/Dockerfile .
 
 # 4. 檢查設定
 python run.py check
@@ -45,7 +45,7 @@ python run.py start
 
 ---
 
-## Docker Container Capabilities (v1.2.13)
+## Docker Container Capabilities (v1.2.14)
 
 The agent container is production-ready with a full tool-use stack pre-installed:
 

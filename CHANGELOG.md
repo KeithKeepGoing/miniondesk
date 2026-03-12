@@ -4,6 +4,24 @@ All notable changes to MinionDesk will be documented in this file.
 
 ---
 
+## [1.2.14] - 2026-03-12
+
+### Chore
+- Version bump: align `pyproject.toml` with production releases (1.2.11 → 1.2.14)
+- Includes all changes from v1.2.12 (Dockerfile CJK fonts + python-pptx) and v1.2.13 (MCP/tool-use production image)
+
+### Summary of Docker improvements (v1.2.12-v1.2.14)
+- Base image: `python:3.9` → `python:3.11`
+- Added Node.js 20 LTS for MCP/tool-use support
+- Complete CJK font stack: `fonts-noto-cjk`, `fonts-wqy-*`
+- Pre-installed `python-pptx`, `reportlab`, `openpyxl`, `python-docx`
+- Data stack: `pandas`, `numpy`, `matplotlib`, `scipy`, `seaborn`
+- Vision/OCR: `Pillow`, `pytesseract`, `opencv-python-headless`
+- Web: `httpx`, `beautifulsoup4`, `lxml`, `html5lib`
+- Non-root `minion` user, `LC_ALL=C.UTF-8`, `MPLBACKEND=Agg`
+
+---
+
 ## [1.2.13] - 2026-03-12
 
 ### Docker: Production-Ready Image with Full Tool-Use and MCP Support
