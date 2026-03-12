@@ -43,7 +43,7 @@ KNOWLEDGE_DIR = Path(_env("KNOWLEDGE_DIR", str(BASE_DIR / "knowledge")))
 DB_PATH    = DATA_DIR / "miniondesk.db"
 
 # Docker
-CONTAINER_IMAGE   = _env("CONTAINER_IMAGE", "miniondesk-agent:1.2.7")
+CONTAINER_IMAGE   = _env("CONTAINER_IMAGE", "miniondesk-agent:1.2.8")
 CONTAINER_TIMEOUT = _int_env("CONTAINER_TIMEOUT", 300)
 CONTAINER_MAX_FAILS = _int_env("CONTAINER_MAX_FAILS", 5)
 CONTAINER_FAIL_COOLDOWN = _float_env("CONTAINER_FAIL_COOLDOWN", 60.0)

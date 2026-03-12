@@ -1,0 +1,7 @@
+skill: systematic-debugging
+version: "1.0.0"
+description: "Root cause investigation protocol for bugs and errors"
+author: "MinionDesk/Superpowers"
+adds:
+  - docs/superpowers/systematic-debugging/SKILL.md
+modifies: []

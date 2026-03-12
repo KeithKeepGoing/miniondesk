@@ -1,0 +1,46 @@
+name: 費用報銷
+description: 員工費用報銷工作流程
+minion: bob
+
+fields:
+  - name: employee
+    label: 申請人
+    required: true
+  - name: amount
+    label: 金額（NT$）
+    type: number
+    required: true
+  - name: category
+    label: 費用類別
+    options: [交通, 餐費, 住宿, 辦公用品, 培訓, 其他]
+    required: true
+  - name: date
+    label: 費用日期
+    type: date
+    required: true
+  - name: description
+    label: 說明
+    required: true
+  - name: receipt
+    label: 收據編號
+
+steps:
+  - name: 提交報銷
+    type: notify
+    message: "{employee} 申請報銷 NT${amount}（{category}）：{description}"
+
+  - name: 財務審核
+    type: approval
+    approver: bob
+    condition: "amount <= 3000"
+    message: "請審核 {employee} 的 NT${amount} 報銷申請"
+
+  - name: 主管審批
+    type: approval
+    approver: manager
+    condition: "amount > 3000"
+    message: "金額超過 NT$3,000，需主管審批"
+
+  - name: 撥款
+    type: notify
+    message: "報銷 NT${amount} 已核准，將於下次發薪日匯入帳戶"

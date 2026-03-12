@@ -184,5 +184,55 @@ async def _handle_ipc(
             text = "🔧 *Available Skills:*\n" + ("\n".join(lines) if lines else "None")
         await route_message(chat_jid, text, "")
 
+    elif msg_type == "kb_search":
+        # Handle knowledge base search requested by container enterprise tool
+        from .enterprise.knowledge_base import search
+        query = payload.get("query", "")
+        limit = int(payload.get("limit", 5))
+        if query:
+            try:
+                results = search(query, limit=limit)
+                if results:
+                    lines = [f"• *{r['title']}*: {r['snippet'][:120]}" for r in results]
+                    text = f"📚 *KB Results for '{query}':*\n" + "\n".join(lines)
+                else:
+                    text = f"📚 No KB results found for: {query}"
+            except Exception as exc:
+                logger.error("IPC kb_search error: %s", exc)
+                text = f"⚠️ KB search failed: {exc}"
+            await route_message(chat_jid, text, "")
+        else:
+            await route_message(chat_jid, "⚠️ kb_search: missing query", "")
+
+    elif msg_type == "workflow_trigger":
+        # Handle workflow trigger requested by container enterprise tool
+        from .enterprise.workflow import trigger_workflow
+        workflow_name = payload.get("workflow", "")
+        data = payload.get("data", {})
+        if workflow_name:
+            try:
+                result_text = await trigger_workflow(workflow_name, data, group_jid)
+                await route_message(chat_jid, result_text, "")
+            except Exception as exc:
+                logger.error("IPC workflow_trigger error: %s", exc)
+                await route_message(chat_jid, f"⚠️ Workflow '{workflow_name}' failed: {exc}", "")
+        else:
+            await route_message(chat_jid, "⚠️ workflow_trigger: missing workflow name", "")
+
+    elif msg_type == "calendar_check":
+        # Handle calendar check requested by container enterprise tool
+        from .enterprise.calendar import check_availability
+        user = payload.get("user", "")
+        date = payload.get("date", "")
+        if user and date:
+            try:
+                result_text = await check_availability(user, date)
+                await route_message(chat_jid, result_text, "")
+            except Exception as exc:
+                logger.error("IPC calendar_check error: %s", exc)
+                await route_message(chat_jid, f"⚠️ Calendar check failed: {exc}", "")
+        else:
+            await route_message(chat_jid, "⚠️ calendar_check: missing user or date", "")
+
     else:
         logger.warning("Unknown IPC type: %s", msg_type)

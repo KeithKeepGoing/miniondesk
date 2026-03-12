@@ -520,13 +520,9 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def _sse_stream(self):
-        self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream")
-        self.send_header("Cache-Control", "no-cache")
-        self.send_header("X-Accel-Buffering", "no")
-        self.end_headers()
-
-        # Enforce max concurrent SSE clients to prevent memory exhaustion.
+        # Enforce max concurrent SSE clients BEFORE writing any response headers.
+        # Checking after send_response(200) would result in 503 body on a 200
+        # connection — browsers would silently retry instead of backing off.
         with _log_lock:
             if len(_sse_subscribers) >= _MAX_SSE_CLIENTS:
                 self.send_response(503)
@@ -535,6 +531,12 @@ class _Handler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(b"Too many SSE clients (limit 20)")
                 return
+
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
 
         # Each SSE client gets its own dedicated queue (fan-out model).
         # This ensures all connected clients receive all log entries,

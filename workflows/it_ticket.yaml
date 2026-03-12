@@ -1,0 +1,41 @@
+name: IT 工單
+description: IT 問題回報與處理流程
+minion: stuart
+
+fields:
+  - name: reporter
+    label: 回報人
+    required: true
+  - name: category
+    label: 問題類別
+    options: [hardware, software, account, network, other]
+    required: true
+  - name: priority
+    label: 優先級
+    options: [low, medium, high, critical]
+    default: medium
+  - name: description
+    label: 問題描述
+    required: true
+  - name: device
+    label: 設備資訊
+
+steps:
+  - name: 建立工單
+    type: notify
+    message: "新 IT 工單：{category} - {description}（優先級：{priority}，回報人：{reporter}）"
+
+  - name: IT 評估
+    type: approval
+    approver: stuart
+    timeout_hours: 4
+    message: "請評估並處理 {reporter} 的 {category} 問題"
+
+  - name: 通知進度
+    type: notify
+    message: "您的 IT 工單（{category}）已由 Stuart 受理，預計處理時間視優先級而定"
+
+  - name: 關閉工單
+    type: approval
+    approver: reporter
+    message: "IT 問題是否已解決？請確認後關閉工單"

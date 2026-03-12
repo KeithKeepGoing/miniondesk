@@ -2,6 +2,64 @@
 
 ---
 
+## v1.2.8 — 2026-03-12
+
+### Reliability, Correctness, and Security Improvements (Fifth Round)
+
+本次版本修正 10 個在 v1.2.7 後發現的新問題，涵蓋 SSE 回應順序錯誤、IPC 原子寫入競態、LLM 設定靜默失敗、DB 雙重連線呼叫、基因組適應度未持久化、容器取消計數遺漏、技能安裝不一致回滾、排程一次性任務丟失、容器映像版本未更新及企業 IPC 類型未處理。
+
+#### Fix 1: SSE 503 在標頭已寫入後才傳送（#43）
+
+`_sse_stream()` 在寫入 `send_response(200)` 及 SSE 標頭後才檢查客戶端數量上限，超限時以 200 狀態傳送 503 錯誤文字，瀏覽器 EventSource 誤判成功並不斷重試。
+將上限檢查移至任何標頭寫入之前，超限時正確回傳 HTTP 503。
+
+#### Fix 2: IPC 檔案非原子寫入 TOCTOU 競態（#44）
+
+容器以 `write_text()` 直接寫入 `.json` 檔案，主機在寫入完成前即可讀取，導致 `JSONDecodeError` 且訊息被永久標記為已處理並刪除（靜默訊息丟失）。
+改為先寫入 `.tmp` 暫存檔，再以 `rename()` 原子替換為 `.json`，確保主機只讀取完整檔案。
+
+#### Fix 3: 無 LLM 設定時靜默連線到 localhost（#45）
+
+`get_provider()` 在所有 LLM 環境變數均未設定時，回退至 `OllamaProvider()` 嘗試連線 `localhost:11434`，在容器環境中產生難以排查的連線拒絕錯誤。
+改為拋出 `RuntimeError` 並列出所有可用設定選項，快速失敗並給出明確指引。
+
+#### Fix 4: `add_message()` 雙重 `_conn()` 呼叫（#46）
+
+`add_message()` 和 `record_evolution_run()` 對 `execute()` 和 `commit()` 各自呼叫一次 `_conn()`，若未來加入連線輪換邏輯可能導致 commit 執行在不同連線上造成靜默資料丟失。
+改為在函式開頭指派一次 `conn = _conn()` 並重複使用。
+
+#### Fix 5: 基因組適應度分數未持久化（#47）
+
+`evolve_genome()` 的 `changed` 檢查未包含 `fitness_score` 差異，若 style/formality/depth 維度未變但適應度顯著改變，新分數永遠不會寫入 DB，Dashboard 顯示陳舊值。
+將 `abs(avg_fitness - before_fitness) > 0.001` 加入 `changed` 條件。
+
+#### Fix 6: `CancelledError` 後容器殭屍及熔斷計數遺漏（#48）
+
+`CancelledError` 處理只呼叫 `docker stop`（advisory），未直接終止 subprocess handle，且未增加熔斷失敗計數，導致殭屍容器及熔斷器低估失敗率。
+新增 `proc.kill()` 直接終止 subprocess，並在 re-raise 前遞增失敗計數。
+
+#### Fix 7: 技能安裝失敗無回滾（#49）
+
+`install_skill()` 逐檔複製，中途失敗時部分檔案已複製到目標目錄但 registry 未更新，孤立檔案繞過後續安裝的衝突偵測。
+新增 `copied_paths` 追蹤，任何例外時刪除所有已複製檔案後回傳錯誤。
+
+#### Fix 8: 一次性排程任務在 dispatch 前即刪除（#50）
+
+`once` 任務在 `create_task()` 後立即從 DB 刪除，若容器執行失敗則任務永久消失（無重試、無通知）。
+將 `db.delete_task()` 移至 done callback 內，僅在成功時刪除；失敗時同樣刪除（避免重複執行）但先記錄錯誤。
+
+#### Fix 9: 容器映像預設版本未隨版本更新（#51）
+
+`CONTAINER_IMAGE` 預設值停在 `1.2.7`，不設定 `.env` 時主機與容器版本不一致，新 payload 欄位在舊映像中靜默忽略。
+更新預設值為 `miniondesk-agent:1.2.8`；啟動時記錄當前映像標籤供驗證。
+
+#### Fix 10: 企業 IPC 類型 `kb_search`/`workflow_trigger`/`calendar_check` 靜默忽略（#52）
+
+容器企業工具寫入這三種 IPC 訊息類型，但主機 `_handle_ipc()` 無對應處理器，全部落入 `Unknown IPC type` 分支被丟棄，企業功能實際上完全無效。
+新增三個處理器，分別呼叫 `knowledge_base.search()`、`workflow.trigger_workflow()` 和 `calendar.check_availability()`，並將結果路由回群組。
+
+---
+
 ## v1.2.7 — 2026-03-12
 
 ### Reliability and Edge Case Improvements (Fourth Round)

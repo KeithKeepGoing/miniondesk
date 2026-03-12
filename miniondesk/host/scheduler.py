@@ -92,7 +92,14 @@ async def run_scheduler(dispatch_fn) -> None:
                             "Scheduler task %s dispatch failed (consecutive=%d): %s",
                             _task_id, consecutive, exc,
                         )
-                        if consecutive >= _MAX_CONSECUTIVE_FAILURES and _schedule_type != "once":
+                        if _schedule_type == "once":
+                            # Delete the once-task on failure too — there is no
+                            # next_run to update and retrying infinitely would be wrong.
+                            try:
+                                db.delete_task(_task_id)
+                            except Exception as db_exc:
+                                logger.error("Failed to delete failed once-task %s: %s", _task_id, db_exc)
+                        elif consecutive >= _MAX_CONSECUTIVE_FAILURES:
                             logger.warning(
                                 "Suspending task %s after %d consecutive failures",
                                 _task_id, consecutive,
@@ -104,12 +111,17 @@ async def run_scheduler(dispatch_fn) -> None:
                     else:
                         # Reset on success
                         _fail_counts.pop(_task_id, None)
+                        # Delete once-tasks only after successful dispatch so a
+                        # transient container failure doesn't permanently lose the task.
+                        if _schedule_type == "once":
+                            try:
+                                db.delete_task(_task_id)
+                            except Exception as db_exc:
+                                logger.error("Failed to delete completed once-task %s: %s", _task_id, db_exc)
 
                 _task = asyncio.create_task(dispatch_fn(task["group_jid"], task["prompt"]))
                 _task.add_done_callback(_on_task_done)
-                if task["schedule_type"] == "once":
-                    db.delete_task(task_id)
-                else:
+                if task["schedule_type"] != "once":
                     next_run = _compute_next_run(task["schedule_type"], task["schedule_value"])
                     db.update_task_run(task_id, next_run or int(time.time()) + 3600)
         except Exception as exc:

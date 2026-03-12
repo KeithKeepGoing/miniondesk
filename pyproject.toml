@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "miniondesk"
+version = "1.0.0"
+description = "Enterprise AI assistant framework — Docker-isolated minions, model-agnostic"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "aiofiles>=23.0",
+    "aiosqlite>=0.19",
+    "google-generativeai>=0.5",
+    "anthropic>=0.20",
+    "openai>=1.20",
+    "python-telegram-bot>=21.0",
+    "pyyaml>=6.0",
+    "aiohttp>=3.9",
+    "watchdog>=4.0",
+    "click>=8.1",
+    "rich>=13.0",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+miniondesk = "miniondesk.run:cli"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

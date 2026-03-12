@@ -1,0 +1,7 @@
+skill: planning
+version: "1.0.0"
+description: "Break complex tasks into atomic, trackable steps before execution"
+author: "MinionDesk/Superpowers"
+adds:
+  - docs/superpowers/planning/SKILL.md
+modifies: []
