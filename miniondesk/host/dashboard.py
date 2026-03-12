@@ -17,6 +17,9 @@ from . import config, db
 
 logger = logging.getLogger(__name__)
 
+# Maximum concurrent SSE log-stream clients; prevents memory exhaustion from connection floods.
+_MAX_SSE_CLIENTS = 20
+
 # ─── Log capture ──────────────────────────────────────────────────────────────
 
 # _log_buffer holds the recent history for new SSE clients to catch up on connect.
@@ -522,6 +525,16 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-cache")
         self.send_header("X-Accel-Buffering", "no")
         self.end_headers()
+
+        # Enforce max concurrent SSE clients to prevent memory exhaustion.
+        with _log_lock:
+            if len(_sse_subscribers) >= _MAX_SSE_CLIENTS:
+                self.send_response(503)
+                self.send_header("Content-Type", "text/plain")
+                self.send_header("Content-Length", "29")
+                self.end_headers()
+                self.wfile.write(b"Too many SSE clients (limit 20)")
+                return
 
         # Each SSE client gets its own dedicated queue (fan-out model).
         # This ensures all connected clients receive all log entries,

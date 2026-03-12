@@ -4,6 +4,23 @@ All notable changes to MinionDesk will be documented in this file.
 
 ---
 
+## [1.2.7] - 2026-03-12
+
+### Reliability and Edge Case Improvements (Fourth Round)
+
+- `dev_engine.py`: Added concurrency guard in `start_dev_session()` — checks for an existing `pending`/`running` session before creating a new one, preventing parallel pipelines from corrupting artifacts for the same group (#34)
+- `dev_engine.py`: Removed fragile string-replace path sanitization in `_parse_file_blocks()`; rely solely on the already-correct `resolve().relative_to()` check in `_deploy_files()` to prevent the `....//` bypass pattern (#37)
+- `runner.py` (host): Container names now include milliseconds + 6-char UUID suffix (`minion-{folder}-{ms}-{uuid}`) to prevent Docker name collisions when two requests arrive within the same second (#36)
+- `scheduler.py`: `add_task()` now raises `ValueError` for invalid cron/interval expressions (using `croniter.is_valid()`) instead of silently saving a task with `next_run=NULL` that never fires; interval values validated to be positive (#35)
+- `ipc.py`: `schedule_task` IPC handler now catches `ValueError` from `add_task` and reports the error to the user; skill install/uninstall handlers now run in `asyncio.run_in_executor` to avoid blocking the event loop (#41)
+- `db.py`: `update_genome()` now clamps `formality`, `technical_depth`, and `fitness_score` to `[0.0, 1.0]` via `_clamp01()` helper, preventing out-of-range values from breaking dashboard display (#39)
+- `db.py`: `delete_group()` now atomically deletes all related rows across `messages`, `tasks`, `genome`, `evolution_runs`, `evolution_log`, `immune_threats`, and `dev_sessions` tables in a single transaction (#38)
+- `dashboard.py`: SSE `/api/logs/stream` now enforces a `_MAX_SSE_CLIENTS=20` cap; excess connections receive HTTP 503 instead of silently consuming memory and file descriptors (#40)
+- `config.py`: Default `CONTAINER_IMAGE` updated to `miniondesk-agent:1.2.7`
+- `miniondesk/__init__.py`: Version bumped to 1.2.7
+
+---
+
 ## [1.2.6] - 2026-03-12
 
 ### Security and Reliability Improvements (Third Round)

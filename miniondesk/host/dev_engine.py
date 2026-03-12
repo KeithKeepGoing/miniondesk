@@ -25,6 +25,10 @@ from typing import Any
 from . import config, db
 from .runner import run_minion
 
+# Per-group lock to prevent concurrent DevEngine sessions for the same group
+_dev_engine_locks: dict[str, asyncio.Lock] = {}
+_dev_engine_locks_mutex = asyncio.Lock()
+
 logger = logging.getLogger(__name__)
 
 # ─── Stage definitions ────────────────────────────────────────────────────────
@@ -262,8 +266,9 @@ def _parse_file_blocks(text: str) -> list[tuple[str, str]]:
     for match in pattern.finditer(text):
         raw_path = match.group(1).strip()
         content = match.group(2)
-        # Security: prevent path traversal
-        safe_path = raw_path.lstrip("/").replace("..", "").replace("//", "/")
+        # Strip leading slashes; rely on _deploy_files' resolve().relative_to() check
+        # for actual containment enforcement (string-replace is not sufficient).
+        safe_path = raw_path.lstrip("/")
         if safe_path:
             files.append((safe_path, content))
     return files
@@ -441,14 +446,44 @@ async def run_pipeline(
 
 # ─── Public API ───────────────────────────────────────────────────────────────
 
+async def _get_group_dev_lock(group_jid: str) -> asyncio.Lock:
+    """Return (or create) the per-group asyncio.Lock for DevEngine."""
+    async with _dev_engine_locks_mutex:
+        if group_jid not in _dev_engine_locks:
+            _dev_engine_locks[group_jid] = asyncio.Lock()
+        return _dev_engine_locks[group_jid]
+
+
 async def start_dev_session(
     group_jid: str,
     prompt: str,
     mode: str = "auto",
     notify_fn = None,
 ) -> str:
-    """Start a new DevEngine session. Returns session_id."""
+    """Start a new DevEngine session. Returns session_id.
+
+    Guards against concurrent sessions for the same group: if a session is
+    already running or pending, the call is rejected with an error message.
+    """
     _init_dev_sessions_table()
+
+    # Concurrency guard: reject if a session is already active for this group
+    try:
+        conn = db._conn()
+        running = conn.execute(
+            "SELECT session_id FROM dev_sessions WHERE group_jid=? AND status IN ('pending','running') LIMIT 1",
+            (group_jid,),
+        ).fetchone()
+        if running:
+            msg = (
+                f"⚠️ DevEngine: a session (`{running['session_id']}`) is already running for this group. "
+                "Wait for it to complete or cancel it first."
+            )
+            if notify_fn:
+                await notify_fn(group_jid, msg)
+            return running["session_id"]
+    except Exception as exc:
+        logger.warning("DevEngine concurrency check failed: %s", exc)
 
     session_id = str(uuid.uuid4())[:8]
     session = {

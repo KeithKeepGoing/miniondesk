@@ -9,6 +9,7 @@ import sys
 import tempfile
 import threading
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -159,7 +160,9 @@ async def run_minion(
     dynamic_tools_host.mkdir(parents=True, exist_ok=True)
     dynamic_tools_docker = _docker_path(str(dynamic_tools_host.resolve()))
 
-    container_name = f"minion-{group_folder}-{int(time.time())}"
+    # Include milliseconds + short UUID to avoid name collisions when multiple
+    # requests for the same group arrive within the same second.
+    container_name = f"minion-{group_folder}-{int(time.time() * 1000)}-{uuid.uuid4().hex[:6]}"
 
     mounts = [
         f"{group_dir}:/workspace/group",
