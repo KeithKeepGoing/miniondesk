@@ -1,5 +1,14 @@
+# MinionDesk container requirements — project-level Python dependencies
+# System-level packages (pandas, numpy, Pillow, etc.) are pre-installed in the
+# Dockerfile to avoid runtime network calls and speed up container startup.
+
+# ── LLM provider SDKs ────────────────────────────────────────────────────────
 google-generativeai>=0.5
 anthropic>=0.20
 openai>=1.20
+
+# ── Async I/O helpers ─────────────────────────────────────────────────────────
 aiofiles>=23.0
+
+# ── Config & serialisation ────────────────────────────────────────────────────
 pyyaml>=6.0
