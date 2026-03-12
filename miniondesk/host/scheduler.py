@@ -116,6 +116,18 @@ async def run_scheduler(dispatch_fn, notify_fn=None) -> None:
                             "Scheduler task %s dispatch failed (consecutive=%d): %s",
                             _task_id, consecutive, exc,
                         )
+                        if _schedule_type != "once":
+                            # Exponential backoff: 10s, 20s, 40s, ... up to 3600s
+                            backoff_seconds = min(10 * (2 ** consecutive), 3600)
+                            next_run_ts = int(time.time()) + backoff_seconds
+                            try:
+                                db.update_task_run(_task_id, next_run_ts)
+                                logger.info(
+                                    "Scheduler task %s backoff: next retry in %ds (failure #%d)",
+                                    _task_id, backoff_seconds, consecutive,
+                                )
+                            except Exception as db_exc:
+                                logger.error("Failed to update backoff for task %s: %s", _task_id, db_exc)
                         if _schedule_type == "once":
                             # Notify the group that the once-task failed so the user
                             # is not left wondering what happened to their scheduled task.

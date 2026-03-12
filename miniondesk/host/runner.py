@@ -97,6 +97,14 @@ async def run_minion(
 
     rid = f"[{request_id}] " if request_id else ""
 
+    # Validate group_folder to prevent path traversal via special characters
+    if not re.match(r'^[\w\-]+$', group_folder):
+        logger.error(
+            "%sInvalid group_folder rejected (potential path traversal): %r",
+            rid, group_folder,
+        )
+        raise ValueError(f"Invalid group_folder {group_folder!r}: must be alphanumeric/hyphens only")
+
     # Validate minion name to prevent path traversal via DB-stored values
     if not _MINION_NAME_RE.match(minion_name):
         logger.error(

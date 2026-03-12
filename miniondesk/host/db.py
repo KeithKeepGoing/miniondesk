@@ -65,6 +65,9 @@ def _migrate() -> None:
         created_at      INTEGER NOT NULL DEFAULT (strftime('%s','now'))
     );
 
+    CREATE INDEX IF NOT EXISTS idx_tasks_status
+    ON tasks(status);
+
     CREATE TABLE IF NOT EXISTS genome (
         group_jid       TEXT PRIMARY KEY,
         response_style  TEXT NOT NULL DEFAULT 'balanced',
@@ -426,12 +429,13 @@ def immune_check(sender_jid: str, group_jid: str) -> bool:
 def immune_record(sender_jid: str, group_jid: str) -> int:
     """Record a message and return current count for this sender."""
     conn = _conn()
+    now = int(time.time())
     conn.execute(
         """INSERT INTO immune_threats(sender_jid, group_jid, count, last_seen)
-           VALUES(?,?,1,strftime('%s','now'))
+           VALUES(?,?,1,?)
            ON CONFLICT(sender_jid, group_jid) DO UPDATE SET
-               count=count+1, last_seen=strftime('%s','now')""",
-        (sender_jid, group_jid),
+               count=count+1, last_seen=?""",
+        (sender_jid, group_jid, now, now),
     )
     conn.commit()
     row = conn.execute(

@@ -2,6 +2,7 @@
 from __future__ import annotations
 import logging
 import os
+import sys
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -133,6 +134,23 @@ def validate() -> None:
             "Minion personas will fall back to the default 'helpful assistant' prompt.",
             MINIONS_DIR,
         )
+
+    # Dashboard password security checks
+    if DASHBOARD_PASSWORD == "changeme":
+        if DASHBOARD_HOST != "127.0.0.1":
+            print(
+                "FATAL: DASHBOARD_PASSWORD is set to the insecure default 'changeme' "
+                "but DASHBOARD_HOST is not '127.0.0.1'. "
+                "Set a strong password in your .env file before exposing the dashboard.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        else:
+            logger.warning("DASHBOARD_PASSWORD is still the default 'changeme'. "
+                           "Change it before exposing the dashboard on a network interface.")
+
+    if len(DASHBOARD_PASSWORD) < 8:
+        logger.warning("DASHBOARD_PASSWORD is shorter than 8 characters — consider a stronger password")
 
     # Check that DATA_DIR parent is writable so the DB file can be created.
     # A read-only BASE_DIR (e.g., Docker image layer without a volume) produces a

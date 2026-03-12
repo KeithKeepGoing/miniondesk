@@ -21,6 +21,8 @@ def calculate_fitness(success: bool, response_ms: int) -> float:
     """
     if not success:
         return 0.1
+    # Clamp to sane bounds (0 ms to 10 minutes)
+    response_ms = max(0, min(response_ms, 600_000))
     # Time penalty: ideal < 5s, bad > 20s
     time_score = max(0.0, 1.0 - (response_ms - 5000) / 15000)
     time_score = min(1.0, time_score)
