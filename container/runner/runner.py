@@ -168,7 +168,20 @@ async def run_minion(stdin_data: dict) -> dict:
 
 async def main():
     _log("📥 STDIN", "reading...")
-    raw = sys.stdin.read()
+    loop = asyncio.get_event_loop()
+    # Run blocking stdin.read() in a thread executor to avoid stalling the event loop.
+    # Also apply a hard timeout so a hung/partial write from the host doesn't block forever.
+    try:
+        raw = await asyncio.wait_for(
+            loop.run_in_executor(None, sys.stdin.read),
+            timeout=30,
+        )
+    except asyncio.TimeoutError:
+        result = {"status": "error", "result": "Stdin read timed out", "turns": 0}
+        print("<<<MINIONDESK_OUTPUT_START>>>")
+        print(json.dumps(result, ensure_ascii=False))
+        print("<<<MINIONDESK_OUTPUT_END>>>")
+        sys.exit(1)
     _log("📥 STDIN", f"read {len(raw)} bytes")
 
     try:

@@ -4,6 +4,22 @@ All notable changes to MinionDesk will be documented in this file.
 
 ---
 
+## [1.2.6] - 2026-03-12
+
+### Security and Reliability Improvements (Third Round)
+
+- `skills_engine.py`: `install_skill()` 的 `adds` 檔案路徑加入 `relative_to()` 路徑穿越防護，與 `dev_engine._deploy_files()` 一致；`container_tools` 加入檔名安全檢查及同名衝突偵測，拒絕安裝會覆蓋已安裝技能工具的技能（#24, #28）
+- `dashboard.py`: 實作 HTTP Basic Auth，`DASHBOARD_PASSWORD` 設定值現已正確強制執行；所有端點在憑證不符時回傳 401；修正群組名稱、JID、folder、minion、trigger 等欄位在 `innerHTML` 中未轉義的 XSS 漏洞（#25, #30）
+- `immune.py`: 修正 `_sender_timestamps` 字典鍵永不刪除導致的記憶體洩漏；滑動視窗過期後空列表對應的鍵現在會被清除（#27）
+- `workflow.py`: `trigger_workflow()` 的 `step.message.format(**data)` 改為 `string.Template.safe_substitute()`，防止使用者控制資料觸發 format string injection（#29）
+- `runner.py`（host）: semaphore 現在持有整個容器生命週期（spawn + communicate），而非僅在 spawn 時，使 `CONTAINER_MAX_CONCURRENT` 真正限制同時執行的容器數量（#31）
+- `scheduler.py` + `db.py`: 新增每任務連續失敗計數器；循環任務連續失敗 `_MAX_CONSECUTIVE_FAILURES`（預設 5）次後自動設為 `suspended` 狀態，防止失效任務無限重試消耗資源（#26）
+- `runner.py`（container）: `sys.stdin.read()` 改為在執行器中以非阻塞方式執行並加入 30 秒逾時，防止阻塞 asyncio event loop 及主機部分寫入時永久掛起（#23）
+- `db.py`: 新增 `suspend_task()` 函數；`delete_group()` 改為單次 `_conn()` 呼叫避免潛在不一致（#32）
+- `miniondesk/__init__.py`: 版本號更新為 1.2.6
+
+---
+
 ## [1.2.5] - 2026-03-12
 
 ### Architecture Improvements (Second Round)

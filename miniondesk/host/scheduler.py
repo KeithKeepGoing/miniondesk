@@ -10,6 +10,9 @@ from . import config, db
 
 logger = logging.getLogger(__name__)
 
+# Suspend a recurring task after this many consecutive dispatch failures
+_MAX_CONSECUTIVE_FAILURES = 5
+
 
 def _compute_next_run(schedule_type: str, schedule_value: str, now: float | None = None) -> int | None:
     now = now or time.time()
@@ -54,24 +57,50 @@ async def add_task(group_jid: str, payload: dict) -> str:
 async def run_scheduler(dispatch_fn) -> None:
     """Poll DB for due tasks and dispatch them."""
     logger.info("Scheduler started")
+    # In-memory consecutive failure counter per task_id
+    _fail_counts: dict[str, int] = {}
+
     while True:
         try:
             due = db.get_due_tasks()
             for task in due:
-                logger.info("Dispatching task %s for group %s", task["id"], task["group_jid"])
+                task_id = task["id"]
+                logger.info("Dispatching task %s for group %s", task_id, task["group_jid"])
 
-                def _on_task_done(t: asyncio.Task, task_id: str = task["id"]) -> None:
+                def _on_task_done(
+                    t: asyncio.Task,
+                    _task_id: str = task_id,
+                    _group_jid: str = task["group_jid"],
+                    _schedule_type: str = task["schedule_type"],
+                ) -> None:
                     exc = t.exception() if not t.cancelled() else None
                     if exc:
-                        logger.error("Scheduler task %s dispatch failed: %s", task_id, exc)
+                        _fail_counts[_task_id] = _fail_counts.get(_task_id, 0) + 1
+                        consecutive = _fail_counts[_task_id]
+                        logger.error(
+                            "Scheduler task %s dispatch failed (consecutive=%d): %s",
+                            _task_id, consecutive, exc,
+                        )
+                        if consecutive >= _MAX_CONSECUTIVE_FAILURES and _schedule_type != "once":
+                            logger.warning(
+                                "Suspending task %s after %d consecutive failures",
+                                _task_id, consecutive,
+                            )
+                            try:
+                                db.suspend_task(_task_id, str(exc))
+                            except Exception as db_exc:
+                                logger.error("Failed to suspend task %s: %s", _task_id, db_exc)
+                    else:
+                        # Reset on success
+                        _fail_counts.pop(_task_id, None)
 
                 _task = asyncio.create_task(dispatch_fn(task["group_jid"], task["prompt"]))
                 _task.add_done_callback(_on_task_done)
                 if task["schedule_type"] == "once":
-                    db.delete_task(task["id"])
+                    db.delete_task(task_id)
                 else:
                     next_run = _compute_next_run(task["schedule_type"], task["schedule_value"])
-                    db.update_task_run(task["id"], next_run or int(time.time()) + 3600)
+                    db.update_task_run(task_id, next_run or int(time.time()) + 3600)
         except Exception as exc:
             logger.error("Scheduler error: %s", exc)
         await asyncio.sleep(10)

@@ -2,6 +2,64 @@
 
 ---
 
+## v1.2.6 — 2026-03-12
+
+### Security and Reliability Improvements (Third Round)
+
+本次版本修正 10 個在 v1.2.5 後發現的新安全與可靠性問題，涵蓋路徑穿越防護、認證強制執行、XSS 修正、記憶體洩漏、排程器穩定性及並發控制。
+
+#### Fix 1: Container runner stdin 阻塞問題（#23）
+
+`container/runner/runner.py` 中 `sys.stdin.read()` 為同步阻塞呼叫，在 `asyncio` 環境中會佔用 event loop thread。
+改為 `loop.run_in_executor(None, sys.stdin.read)` 並加入 30 秒 `asyncio.wait_for()` 逾時防護，避免主機部分寫入時容器永久掛起。
+
+#### Fix 2: skills_engine 路徑穿越防護（#24）
+
+`install_skill()` 的 `adds` 檔案列表缺乏路徑驗證，惡意 manifest 可覆蓋主機系統檔案或應用程式原始碼。
+加入與 `dev_engine._deploy_files()` 相同的 `target.resolve().relative_to(base_dir.resolve())` 檢查，路徑逃逸時拒絕安裝。
+
+#### Fix 3: Dashboard HTTP Basic Auth 強制執行（#25）
+
+`DASHBOARD_PASSWORD` 設定值存在但從未驗證，所有端點皆可未認證存取。
+在 `_Handler.do_GET()` 前加入 `_require_auth()` 檢查，比對 `Authorization: Basic` header；不符時回傳 401 + `WWW-Authenticate`。
+
+#### Fix 4: 循環任務死信佇列 / 暫停機制（#26）
+
+循環任務每次執行失敗後仍持續以完整頻率重新排程，導致失效任務無限消耗容器資源並觸發熔斷器。
+新增每任務連續失敗計數器；達 `_MAX_CONSECUTIVE_FAILURES`（預設 5）次後將任務設為 `suspended`。
+
+#### Fix 5: immune.py 記憶體洩漏修正（#27）
+
+`_sender_timestamps` defaultdict 對每個曾發訊的發送者永遠保留鍵，長期執行下字典鍵無限累積。
+滑動視窗內無時間戳記時刪除對應鍵，防止記憶體無限成長。
+
+#### Fix 6: 動態工具名稱衝突偵測（#28）
+
+安裝兩個包含同名 container_tool 的技能時，第二次安裝會靜默覆蓋第一個技能的工具檔案。
+安裝前檢查 `dynamic_tools/` 中是否已有同名檔案且屬於不同技能，若有則拒絕安裝並提示衝突技能名稱。
+
+#### Fix 7: workflow.py format string injection（#29）
+
+`trigger_workflow()` 使用 `step.message.format(**data)` 其中 data 部分來自使用者輸入，可能洩漏物件屬性。
+改為 `string.Template(template).safe_substitute(data)`，僅替換明確的 `$key` 佔位符。
+
+#### Fix 8: Dashboard XSS 修正（#30）
+
+群組名稱、JID、folder、minion、trigger 欄位透過 `innerHTML` 直接插入 DOM，未經 HTML 轉義。
+對所有透過 innerHTML 渲染的群組欄位套用既有的 `htmlEsc()` 函數。
+
+#### Fix 9: Container semaphore 持有整個生命週期（#31）
+
+Semaphore 在 `create_subprocess_exec` 返回後立即釋放，使 `CONTAINER_MAX_CONCURRENT` 僅限制啟動速率而非實際執行數量。
+將 `proc.communicate()` 移入 `async with semaphore:` 區塊，確保限制真正生效。
+
+#### Fix 10: DB atexit 多執行緒連線清理（#32）
+
+`atexit` 只在主執行緒執行，Dashboard 背景執行緒的 thread-local DB 連線在關閉時不會被清理。
+新增 `suspend_task()` 函數；修正 `delete_group()` 使用單次 `_conn()` 呼叫確保一致性。
+
+---
+
 ## v1.2.5 — 2026-03-12
 
 ### 架構改進第二輪（Architecture Improvements Round 2）
