@@ -313,5 +313,21 @@ async def _handle_ipc(
         else:
             logger.warning("IPC web_search: missing query or request_id")
 
+    elif msg_type == "unblock_sender":
+        # Allow an operator or admin minion to unblock a previously auto-blocked sender.
+        # This is the only programmatic path to reverse an auto-block without direct DB access.
+        from . import db as _db
+        sender = payload.get("sender_jid", "").strip()
+        if sender:
+            try:
+                _db.immune_unblock(sender, group_jid)
+                logger.info("IPC unblock_sender: unblocked %s in %s", sender, group_jid)
+                await route_message(chat_jid, f"✅ Sender unblocked: {sender}", "")
+            except Exception as exc:
+                logger.error("IPC unblock_sender: failed for %s in %s: %s", sender, group_jid, exc)
+                await route_message(chat_jid, f"⚠️ unblock_sender failed: {exc}", "")
+        else:
+            await route_message(chat_jid, "⚠️ unblock_sender: missing sender_jid", "")
+
     else:
         logger.warning("Unknown IPC type: %s", msg_type)

@@ -71,6 +71,31 @@ class GroupQueue:
 
         q.put_nowait(coro)
 
+    async def shutdown(self) -> None:
+        """Cancel all worker tasks gracefully during host shutdown.
+
+        Without this, queued-but-unstarted coroutines are silently abandoned
+        when the event loop closes after SIGTERM. Calling shutdown() before
+        stopping channels ensures in-progress work has a chance to log its
+        cancellation and any pending items in the queue are dropped visibly.
+        """
+        for jid, task in list(self._workers.items()):
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
+                pending = self._queues[jid].qsize()
+                if pending:
+                    logger.warning(
+                        "GroupQueue [%s] shutdown: %d queued item(s) dropped",
+                        jid, pending,
+                    )
+        self._workers.clear()
+        self._queues.clear()
+        self._locks.clear()
+
 
 _default_queue = GroupQueue()
 

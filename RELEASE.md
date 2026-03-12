@@ -2,6 +2,42 @@
 
 ---
 
+## v1.2.11 — 2026-03-12
+
+### Reliability, Memory, and Usability Fixes (Eighth Round)
+
+本次版本修正 7 個在 v1.2.10 後發現的新問題，涵蓋 delete_task 雙重 _conn() 呼叫、immune 記憶體字典無限增長、immune_threats 資料表無清理機制、被封鎖的發送者無法解封、技能文件注入無大小限制、排程任務失敗無使用者通知、以及 GroupQueue worker 任務在 shutdown 時被靜默丟棄。
+
+#### Fix 1: `db.py` `delete_task()` 雙重 `_conn()` 呼叫（#72）
+
+`delete_task()` 對 `execute()` 和 `commit()` 各自呼叫一次 `_conn()`。在極端情況下兩次呼叫可能取得不同的連線物件，導致刪除操作被提交至不同連線而靜默失敗。改為捕捉一次 `conn = _conn()` 並重用，與所有其他 DB 函數的寫法一致。
+
+#### Fix 2: `immune.py` `_sender_timestamps` 字典無限增長（#73）
+
+`is_allowed()` 在過濾舊時間戳之前就先將 `now` 附加至 `fresh`，導致 `fresh` 永遠非空，清理分支（`del _sender_timestamps[window_key]`）實際上無法到達。所有曾發送過訊息的發送者都會在字典中永久保留。改為先過濾再判斷是否清理，再追加 `now`，確保超過 60 秒無活動的發送者能被正確移除。
+
+#### Fix 3: `immune_threats` 資料表無清理機制（#74）
+
+`immune_record()` 每次訊息都插入或更新列，但從未刪除舊列。在高流量部署中（如公開群組），每個唯一發送者各占一列，永久累積。新增 `immune_prune_old_rows()` 函數，在每次健康監控循環（60 秒）中刪除 `blocked=0` 且 `last_seen` 超過 7 天的列；封鎖列保留直到明確解封。
+
+#### Fix 4: 被封鎖的發送者無法透過程式解封（#75）
+
+`db.immune_unblock()` 函數存在但從未被任何 IPC handler 或管理介面呼叫。自動封鎖的發送者只能透過直接操作資料庫才能解封。新增 `unblock_sender` IPC 訊息類型，允許操作員或管理員 minion 透過 IPC 發送解封請求，而無需 SSH 進入主機執行 sqlite3。
+
+#### Fix 5: `skills_engine.py` 技能文件注入無大小限制（#76）
+
+`get_installed_skill_docs()` 將所有已安裝技能的 SKILL.md 內容合併後注入每次容器呼叫的 system prompt，沒有任何大小限制。安裝大量技能或單一大型 SKILL.md 可能超出模型 context 上限並顯著增加 token 成本。新增 `_SKILL_DOCS_MAX_BYTES = 32KB` 上限，超出時跳過並記錄 WARNING。
+
+#### Fix 6: 排程任務失敗時無使用者通知（#77）
+
+`run_scheduler()` 的 done callback 在 dispatch 拋出例外時只記錄日誌，不通知使用者。一次性任務失敗後被靜默刪除，使用者無從得知。新增可選的 `notify_fn` 參數（傳入 `route_message`）；任務失敗時向群組發送錯誤訊息和提示預覽；週期性任務在連續失敗達上限後也會發送暫停通知。
+
+#### Fix 7: `GroupQueue` worker 任務在 shutdown 時被靜默丟棄（#78）
+
+`GroupQueue` 建立的 worker `asyncio.Task` 儲存在 `_workers` 字典但從未被取消。SIGTERM 後 event loop 關閉時，所有仍在隊列中的協程被靜默丟棄，既無日誌也無通知。新增 `GroupQueue.shutdown()` 方法取消所有 worker task 並記錄被丟棄的待處理項目數量；在 `run_host()` 關閉頻道前呼叫。
+
+---
+
 ## v1.2.10 — 2026-03-12
 
 ### Reliability, Security, and Resource Management Fixes (Seventh Round)

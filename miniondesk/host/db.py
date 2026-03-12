@@ -227,8 +227,9 @@ def update_task_run(task_id: str, next_run: int) -> None:
 
 
 def delete_task(task_id: str) -> None:
-    _conn().execute("DELETE FROM tasks WHERE id=?", (task_id,))
-    _conn().commit()
+    conn = _conn()
+    conn.execute("DELETE FROM tasks WHERE id=?", (task_id,))
+    conn.commit()
 
 
 def suspend_task(task_id: str, last_error: str = "") -> None:
@@ -451,11 +452,34 @@ def immune_block(sender_jid: str, group_jid: str) -> None:
 
 def immune_unblock(sender_jid: str, group_jid: str) -> None:
     """Unblock a sender."""
-    _conn().execute(
+    conn = _conn()
+    conn.execute(
         "UPDATE immune_threats SET blocked=0, count=0 WHERE sender_jid=? AND group_jid=?",
         (sender_jid, group_jid),
     )
-    _conn().commit()
+    conn.commit()
+
+
+# Maximum age (seconds) for non-blocked immune_threats rows before they are pruned.
+# Blocked rows are retained indefinitely until explicitly unblocked.
+_IMMUNE_THREATS_MAX_AGE_SECS = 7 * 86400  # 7 days
+
+
+def immune_prune_old_rows() -> int:
+    """Delete non-blocked immune_threats rows older than _IMMUNE_THREATS_MAX_AGE_SECS.
+
+    Blocked rows are kept until explicitly unblocked.
+    Returns the number of rows deleted.
+    """
+    conn = _conn()
+    cutoff = int(time.time()) - _IMMUNE_THREATS_MAX_AGE_SECS
+    cur = conn.execute(
+        "DELETE FROM immune_threats WHERE blocked=0 AND last_seen < ?",
+        (cutoff,),
+    )
+    deleted = cur.rowcount
+    conn.commit()
+    return deleted
 
 
 # ─── Dev sessions ─────────────────────────────────────────────────────────────

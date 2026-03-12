@@ -65,8 +65,13 @@ async def add_task(group_jid: str, payload: dict) -> str:
     return task_id
 
 
-async def run_scheduler(dispatch_fn) -> None:
-    """Poll DB for due tasks and dispatch them."""
+async def run_scheduler(dispatch_fn, notify_fn=None) -> None:
+    """Poll DB for due tasks and dispatch them.
+
+    notify_fn: optional async callable(group_jid, text) used to send failure
+    notifications to the group when a once-task dispatch raises an exception.
+    Without it, failures are only logged and the user has no visibility.
+    """
     logger.info("Scheduler started")
     # In-memory consecutive failure counter per task_id
     _fail_counts: dict[str, int] = {}
@@ -100,6 +105,7 @@ async def run_scheduler(dispatch_fn) -> None:
                     _task_id: str = task_id,
                     _group_jid: str = task["group_jid"],
                     _schedule_type: str = task["schedule_type"],
+                    _prompt: str = task.get("prompt", ""),
                 ) -> None:
                     _in_flight.discard(_task_id)
                     exc = t.exception() if not t.cancelled() else None
@@ -111,6 +117,16 @@ async def run_scheduler(dispatch_fn) -> None:
                             _task_id, consecutive, exc,
                         )
                         if _schedule_type == "once":
+                            # Notify the group that the once-task failed so the user
+                            # is not left wondering what happened to their scheduled task.
+                            if notify_fn:
+                                asyncio.get_event_loop().call_soon_threadsafe(
+                                    asyncio.ensure_future,
+                                    notify_fn(
+                                        _group_jid,
+                                        f"⚠️ Scheduled task failed: {exc}\nPrompt: {_prompt[:80]}",
+                                    ),
+                                )
                             # Delete the once-task on failure too — there is no
                             # next_run to update and retrying infinitely would be wrong.
                             try:
@@ -122,6 +138,15 @@ async def run_scheduler(dispatch_fn) -> None:
                                 "Suspending task %s after %d consecutive failures",
                                 _task_id, consecutive,
                             )
+                            if notify_fn:
+                                asyncio.get_event_loop().call_soon_threadsafe(
+                                    asyncio.ensure_future,
+                                    notify_fn(
+                                        _group_jid,
+                                        f"⚠️ Recurring task suspended after {consecutive} consecutive failures. "
+                                        f"Task ID: {_task_id}. Last error: {exc}",
+                                    ),
+                                )
                             try:
                                 db.suspend_task(_task_id, str(exc))
                             except Exception as db_exc:
