@@ -1,6 +1,6 @@
 [project]
 name = "miniondesk"
-version = "2.4.3"
+version = "2.4.4"
 description = "MinionDesk — Model-agnostic enterprise AI assistant framework"
 readme = "README.md"
 requires-python = ">=3.11"

@@ -4,11 +4,11 @@
 
 ## 版本記錄
 
+v2.4.4 — Container Tool Log 截斷上限提升至 1500 字（🔧 TOOL args + 🔧 RESULT 完整記錄）
 v2.4.3 — Container Runner logging 修復 + System Prompt 記錄（logging.basicConfig + _slog）
 v2.4.2 — Container Logs Modal undefined 修復 + stderr 儲存限制 8KB → 32KB
 v2.4.1 — Container Logs Dashboard 全文 Stderr 展開查看器（📋 展開按鈕 + Modal）
 v2.4.0 — Container 執行 Log 持久化 + Dashboard 🐳 Container Logs 頁籤（DB 記錄 stderr/stdout/耗時）
-v2.3.0 — Dashboard 新增小小兵瀏覽器、功能總覽、使用統計（3 個新 API + 3 個新頁籤）
 
 ---
 

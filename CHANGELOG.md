@@ -1,3 +1,9 @@
+## [2.4.4] — 2026-03-13
+
+### Added
+- runner.py: 新增 🔧 TOOL / 🔧 RESULT `_slog` 記錄，在每次工具呼叫前後輸出到 stderr
+- runner.py: tool args 和 result 截斷上限設為 1500 字元，可看到完整 bash command 和執行結果
+
 ## [2.4.3] — 2026-03-13
 
 ### Fixed
