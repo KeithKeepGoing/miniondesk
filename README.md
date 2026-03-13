@@ -4,6 +4,7 @@
 
 ## 版本記錄
 
+v2.3.0 — Dashboard 新增小小兵瀏覽器、功能總覽、使用統計（3 個新 API + 3 個新頁籤）
 v2.2.0 — Dashboard 全面補強（任務管理、對話歷史、記憶查看器、知識庫瀏覽器，14 個 API endpoints）
 v2.1.1 — 修復關機時 Telegram CRITICAL CancelledError 誤報（先斷頻道再取消 tasks）
 v2.1.0 — 三層記憶系統（熱/暖/冷記憶 + FTS5 混合搜尋 + Weekly Compound）

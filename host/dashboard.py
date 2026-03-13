@@ -160,6 +160,18 @@ async def start_dashboard(port: int = DASHBOARD_PORT) -> None:
             log.error("get_knowledge error: %s", e)
             return JSONResponse({"docs": [], "error": str(e)})
 
+    @app.get("/api/minions")
+    async def get_minions(creds=Depends(verify_auth)):
+        return JSONResponse(_get_minions())
+
+    @app.get("/api/features")
+    async def get_features(creds=Depends(verify_auth)):
+        return JSONResponse(_get_features())
+
+    @app.get("/api/usage")
+    async def get_usage(creds=Depends(verify_auth)):
+        return JSONResponse(_get_usage())
+
     config = uvicorn.Config(app, host=DASHBOARD_HOST, port=port, log_level="warning")
     server = uvicorn.Server(config)
     log.info(f"Admin Dashboard starting on http://{DASHBOARD_HOST}:{port}")
@@ -303,6 +315,138 @@ def _get_kb_stats() -> dict:
         return {"error": "Internal error — check server logs"}
 
 
+def _get_minions() -> dict:
+    """Scan minions/ directory and extract name, description, capabilities."""
+    import re
+    base = Path(__file__).parent.parent / "minions"
+    results = []
+    try:
+        md_files = sorted(base.glob("*.md"))
+    except Exception:
+        md_files = []
+    for f in md_files:
+        try:
+            lines = f.read_text(encoding="utf-8", errors="replace").splitlines()
+        except Exception:
+            continue
+        name = f.stem
+        description = ""
+        capabilities = []
+        # Extract name from first # heading
+        for line in lines[:5]:
+            m = re.match(r"^#\s+(.+)", line)
+            if m:
+                name = m.group(1).strip()
+                break
+        # Extract first paragraph (description) after heading
+        in_para = False
+        for line in lines[1:25]:
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                break
+            if stripped and not in_para:
+                in_para = True
+                description = stripped
+            elif in_para and not stripped:
+                break
+            elif in_para:
+                description += " " + stripped
+        # Find Skills/Capabilities/專長 section and extract bullets
+        in_section = False
+        for line in lines[:25]:
+            stripped = line.strip()
+            if re.match(r"^##\s+.*(技能|能力|Skill|Capabilit|專長)", stripped, re.IGNORECASE):
+                in_section = True
+                continue
+            if in_section:
+                if stripped.startswith("##"):
+                    break
+                m = re.match(r"^[-*]\s+(.+)", stripped)
+                if m:
+                    capabilities.append(m.group(1).strip())
+        results.append({"name": name, "file": f.name, "description": description, "capabilities": capabilities})
+    return {"minions": results, "count": len(results)}
+
+
+def _get_features() -> dict:
+    """Scan enterprise/ and channels/ for Python modules."""
+    import re
+    host_dir = Path(__file__).parent
+    enterprise_dir = host_dir / "enterprise"
+    channels_dir = host_dir / "channels"
+
+    def scan_dir(d: Path) -> list:
+        modules = []
+        try:
+            py_files = sorted(d.glob("*.py"))
+        except Exception:
+            return modules
+        for f in py_files:
+            if f.name == "__init__.py":
+                continue
+            try:
+                text = f.read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                continue
+            # Extract description from first docstring or comment
+            desc = ""
+            dm = re.search(r'^"""(.+?)"""', text, re.DOTALL)
+            if dm:
+                desc = dm.group(1).strip().splitlines()[0].strip()
+            else:
+                dm2 = re.match(r"^#\s*(.+)", text.lstrip())
+                if dm2:
+                    desc = dm2.group(1).strip()
+            # Extract function names
+            funcs = re.findall(r"^def\s+(\w+)\s*\(", text, re.MULTILINE)
+            funcs = [fn for fn in funcs if not fn.startswith("_")]
+            modules.append({"name": f.stem, "description": desc, "functions": funcs})
+        return modules
+
+    return {
+        "enterprise": scan_dir(enterprise_dir),
+        "channels": scan_dir(channels_dir),
+    }
+
+
+def _get_usage() -> dict:
+    """Query usage statistics from the DB."""
+    try:
+        from host import db
+        conn = db.get_conn()
+    except Exception as e:
+        log.error("_get_usage db error: %s", e)
+        return {"messages_per_group": [], "task_stats": {"total": 0, "success": 0, "error": 0, "avg_ms": 0}}
+
+    # Messages per group
+    try:
+        rows = conn.execute(
+            "SELECT jid, COUNT(*) as count FROM messages GROUP BY jid ORDER BY count DESC LIMIT 10"
+        ).fetchall()
+        messages_per_group = [{"jid": r[0], "count": r[1]} for r in rows]
+    except Exception:
+        messages_per_group = []
+
+    # Task run stats
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) as total, "
+            "SUM(CASE WHEN status='success' THEN 1 ELSE 0 END) as success, "
+            "SUM(CASE WHEN status='error' THEN 1 ELSE 0 END) as err, "
+            "ROUND(AVG(duration_ms),0) as avg_ms FROM task_run_logs"
+        ).fetchone()
+        task_stats = {
+            "total": row[0] or 0,
+            "success": row[1] or 0,
+            "error": row[2] or 0,
+            "avg_ms": int(row[3] or 0),
+        }
+    except Exception:
+        task_stats = {"total": 0, "success": 0, "error": 0, "avg_ms": 0}
+
+    return {"messages_per_group": messages_per_group, "task_stats": task_stats}
+
+
 def _dashboard_html() -> str:
     return '''<!DOCTYPE html>
 <html lang="zh-TW">
@@ -386,13 +530,24 @@ select, input[type=text], input[type=number] { background: #0d1117; border: 1px 
 select:focus, input:focus { outline: none; border-color: #58a6ff; }
 .search-row { display: flex; gap: 8px; margin-bottom: 16px; align-items: center; }
 .search-row label { color: #8b949e; font-size: 0.85rem; flex-shrink: 0; }
+/* Minion cards */
+.minion-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+.minion-card { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 16px; }
+.minion-card h3 { color: #bc8cff; font-size: 1rem; margin-bottom: 8px; }
+.minion-desc { color: #8b949e; font-size: 0.85rem; margin-bottom: 10px; }
+.capability-badge { display: inline-block; background: #2d1d5e; color: #bc8cff; border: 1px solid #6e40c9; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; margin: 2px; }
+/* Feature items */
+.feature-item { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 12px; margin-bottom: 10px; }
+.feature-name { color: #58a6ff; font-weight: 600; margin-bottom: 4px; }
+.feature-desc { color: #8b949e; font-size: 0.8rem; margin-bottom: 8px; }
+.feature-fn { display: inline-block; background: #1a3a5c; color: #58a6ff; padding: 1px 6px; border-radius: 4px; font-size: 0.75rem; font-family: monospace; margin: 2px; }
 </style>
 </head>
 <body>
 <header>
   <span style="font-size:1.5rem">🍌</span>
   <h1>MinionDesk Admin Dashboard</h1>
-  <span class="badge">v2.2.0</span>
+  <span class="badge">v2.3.0</span>
   <button class="refresh-btn" onclick="loadCurrentTab()" style="margin-left:auto">🔄 更新</button>
 </header>
 <div class="container">
@@ -406,6 +561,9 @@ select:focus, input:focus { outline: none; border-color: #58a6ff; }
     <button class="tab-btn" onclick="switchTab('knowledge')">📚 知識庫</button>
     <button class="tab-btn" onclick="switchTab('workflows')">📝 工作流程</button>
     <button class="tab-btn" onclick="switchTab('audit')">🔍 審計</button>
+    <button class="tab-btn" onclick="switchTab('minions')">🤖 Minions</button>
+    <button class="tab-btn" onclick="switchTab('features')">⚙️ Features</button>
+    <button class="tab-btn" onclick="switchTab('usage')">📈 使用統計</button>
   </div>
 
   <!-- OVERVIEW TAB -->
@@ -527,6 +685,50 @@ select:focus, input:focus { outline: none; border-color: #58a6ff; }
     </div>
   </div>
 
+  <!-- MINIONS TAB -->
+  <div id="tab-minions" class="tab-panel">
+    <div class="section">
+      <h2>🤖 小小兵瀏覽器</h2>
+      <button class="refresh-btn" onclick="loadMinions()" style="margin-bottom:16px">🔄 更新</button>
+      <div id="minions-grid" class="loading">載入中...</div>
+    </div>
+  </div>
+
+  <!-- FEATURES TAB -->
+  <div id="tab-features" class="tab-panel">
+    <div class="section">
+      <h2>⚙️ 功能總覽</h2>
+      <button class="refresh-btn" onclick="loadFeatures()" style="margin-bottom:16px">🔄 更新</button>
+      <div class="two-col">
+        <div>
+          <h3 style="color:#f0f6fc;margin-bottom:12px;font-size:0.9rem">🏢 企業模組</h3>
+          <div id="features-enterprise" class="loading">載入中...</div>
+        </div>
+        <div>
+          <h3 style="color:#f0f6fc;margin-bottom:12px;font-size:0.9rem">📱 頻道模組</h3>
+          <div id="features-channels" class="loading">載入中...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- USAGE TAB -->
+  <div id="tab-usage" class="tab-panel">
+    <div class="grid" id="usage-kpi" style="margin-bottom:24px">
+      <div class="card"><h3>載入中...</h3><div class="value loading">--</div></div>
+    </div>
+    <div class="two-col">
+      <div class="section">
+        <h2>📊 群組訊息排行 (Top 10)</h2>
+        <div id="usage-msg-chart" class="bar-chart loading">載入中...</div>
+      </div>
+      <div class="section">
+        <h2>⏱ 任務執行摘要</h2>
+        <div id="usage-task-summary" class="loading">載入中...</div>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <script>
@@ -583,6 +785,9 @@ function loadTabData(name) {
     case 'knowledge': loadKB(); break;
     case 'workflows': loadWorkflows(); break;
     case 'audit': loadAudit(); break;
+    case 'minions': loadMinions(); break;
+    case 'features': loadFeatures(); break;
+    case 'usage': loadUsage(); break;
   }
 }
 
@@ -818,6 +1023,101 @@ async function loadAudit() {
         </tbody>
       </table>`;
   } catch(e) { document.getElementById("audit-table").innerHTML = `<span class="error">${esc(e.message)}</span>`; }
+}
+
+// ── Minions ────────────────────────────────────────────────────────────────
+async function loadMinions() {
+  const el = document.getElementById('minions-grid');
+  el.innerHTML = '<span class="loading">載入中...</span>';
+  try {
+    const d = await api('/api/minions');
+    const minions = d.minions || [];
+    if (!minions.length) { el.innerHTML = '<span style="color:#8b949e">暫無小小兵資料</span>'; return; }
+    el.innerHTML = '<div class="minion-grid">' + minions.map(m => `
+      <div class="minion-card">
+        <h3>🤖 ${esc(m.name)}</h3>
+        <div class="minion-desc">${esc(m.description || '（無說明）')}</div>
+        <div>${(m.capabilities||[]).map(c => `<span class="capability-badge">${esc(c)}</span>`).join('')}</div>
+        <div style="font-size:0.75rem;color:#8b949e;margin-top:8px">📄 ${esc(m.file)}</div>
+      </div>`).join('') + '</div>';
+  } catch(e) { el.innerHTML = `<span class="error">${esc(e.message)}</span>`; }
+}
+
+// ── Features ───────────────────────────────────────────────────────────────
+async function loadFeatures() {
+  const entEl = document.getElementById('features-enterprise');
+  const chanEl = document.getElementById('features-channels');
+  entEl.innerHTML = '<span class="loading">載入中...</span>';
+  chanEl.innerHTML = '<span class="loading">載入中...</span>';
+  try {
+    const d = await api('/api/features');
+    function renderModules(mods, el) {
+      if (!mods || !mods.length) { el.innerHTML = '<span style="color:#8b949e">暫無模組資料</span>'; return; }
+      el.innerHTML = mods.map(m => `
+        <div class="feature-item">
+          <div class="feature-name">${esc(m.name)}</div>
+          <div class="feature-desc">${esc(m.description || '（無說明）')}</div>
+          <div>${(m.functions||[]).map(fn => `<span class="feature-fn">${esc(fn)}</span>`).join('')}</div>
+        </div>`).join('');
+    }
+    renderModules(d.enterprise || [], entEl);
+    renderModules(d.channels || [], chanEl);
+  } catch(e) {
+    entEl.innerHTML = `<span class="error">${esc(e.message)}</span>`;
+    chanEl.innerHTML = '';
+  }
+}
+
+// ── Usage ──────────────────────────────────────────────────────────────────
+async function loadUsage() {
+  const kpiEl = document.getElementById('usage-kpi');
+  const msgEl = document.getElementById('usage-msg-chart');
+  const taskEl = document.getElementById('usage-task-summary');
+  kpiEl.innerHTML = '<div class="card"><h3>載入中...</h3><div class="value loading">--</div></div>';
+  msgEl.innerHTML = '<span class="loading">載入中...</span>';
+  taskEl.innerHTML = '<span class="loading">載入中...</span>';
+  try {
+    const d = await api('/api/usage');
+    const ts = d.task_stats || {};
+    const total = ts.total || 0;
+    const success = ts.success || 0;
+    const err = ts.error || 0;
+    const rate = total > 0 ? Math.round(success / total * 100) : 0;
+    kpiEl.innerHTML = `
+      <div class="card blue"><h3>總訊息數（各群組）</h3><div class="value">${esc(String((d.messages_per_group||[]).reduce((s,r)=>s+r.count,0)))}</div></div>
+      <div class="card green"><h3>任務執行次數</h3><div class="value">${esc(String(total))}</div></div>
+      <div class="card ${rate>=80?'green':rate>=50?'yellow':'orange'}"><h3>成功率</h3><div class="value">${esc(String(rate))}%</div><div class="sub">成功 ${esc(String(success))} / 失敗 ${esc(String(err))}</div></div>
+      <div class="card purple"><h3>平均耗時</h3><div class="value">${esc(String(ts.avg_ms||0))}</div><div class="sub">毫秒</div></div>
+    `;
+    // Bar chart for groups
+    const groups = d.messages_per_group || [];
+    if (!groups.length) {
+      msgEl.innerHTML = '<span style="color:#8b949e">暫無群組訊息資料</span>';
+    } else {
+      const maxCount = groups.reduce((m,r) => Math.max(m,r.count), 0) || 1;
+      msgEl.innerHTML = groups.map(r => `
+        <div class="bar-row">
+          <span class="bar-label" style="width:140px;font-size:0.75rem">${esc((r.jid||'').slice(0,18))}…</span>
+          <div class="bar-bg"><div class="bar-fill" style="width:${Math.round(r.count/maxCount*100)}%;background:#bc8cff"></div></div>
+          <span class="bar-val">${esc(String(r.count))}</span>
+        </div>`).join('');
+    }
+    taskEl.innerHTML = `
+      <table>
+        <thead><tr><th>指標</th><th>數值</th></tr></thead>
+        <tbody>
+          <tr><td>總執行次數</td><td>${esc(String(total))}</td></tr>
+          <tr><td>成功次數</td><td style="color:#3fb950">${esc(String(success))}</td></tr>
+          <tr><td>失敗次數</td><td style="color:#f85149">${esc(String(err))}</td></tr>
+          <tr><td>成功率</td><td>${esc(String(rate))}%</td></tr>
+          <tr><td>平均耗時</td><td>${esc(String(ts.avg_ms||0))} ms</td></tr>
+        </tbody>
+      </table>`;
+  } catch(e) {
+    kpiEl.innerHTML = `<div class="card"><div class="error">${esc(e.message)}</div></div>`;
+    msgEl.innerHTML = '';
+    taskEl.innerHTML = '';
+  }
 }
 
 // ── Init ────────────────────────────────────────────────────────────────────
