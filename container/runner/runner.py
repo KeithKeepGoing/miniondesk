@@ -28,6 +28,12 @@ _ALLOWED_SECRET_KEYS = _re.compile(
 
 log = logging.getLogger(__name__)
 
+def _slog(tag: str, msg: str = "") -> None:
+    """Structured stderr log with emoji tags (mirrors EvoClaw _log style)."""
+    import time as _time
+    ts = _time.strftime('%H:%M:%S') + f'.{int(_time.time() * 1000) % 1000:03d}'
+    print(f"[{ts}] {tag} {msg}", file=sys.stderr, flush=True)
+
 # Module-level secrets store — avoids writing secrets into os.environ where
 # they are visible to all subprocesses and may be logged inadvertently.
 # Tools should call get_secret(key) instead of os.getenv(key).
@@ -82,6 +88,19 @@ async def run(inp: dict) -> dict:
     if hints:
         system += "\n\n---\n" + hints
 
+    _slog("🚀 START", f"minion={inp.get('personaName', 'unknown')}")
+    _slog("💬 USER", str(inp.get('prompt', ''))[:400])
+    _slog("📋 SYSTEM", f"{len(system)} chars")
+    # Log first 600 chars of system (persona)
+    for _line in system[:600].split('\n'):
+        if _line.strip():
+            _slog("📋", _line[:120])
+    # Log conversation history
+    conv = inp.get('conversationHistory', [])
+    _slog("📚 HISTORY", f"{len(conv)} turns")
+    for _hmsg in (conv[-3:] if conv else []):
+        _slog(f"📚 [{str(_hmsg.get('role','?')).upper()}]", str(_hmsg.get('content',''))[:200])
+
     from providers import Message
     history: list[Message] = [
         Message(role="user", content=inp.get("prompt", ""))
@@ -89,9 +108,12 @@ async def run(inp: dict) -> dict:
 
     schemas = registry.schemas()
 
+    final_response = None
     for turn in range(MAX_TURNS):
         try:
+            _slog("🧠 LLM →", f"turn={turn}")
             resp = await provider.complete(history, schemas, system)
+            _slog("🧠 LLM ←", f"stop={getattr(resp, 'stop_reason', 'done')}")
         except Exception as e:
             tb = traceback.format_exc()
             log.error(f"Provider error on turn {turn}: {tb}")
@@ -101,6 +123,9 @@ async def run(inp: dict) -> dict:
             }
 
         if resp.finish_reason == "stop" or not resp.tool_calls:
+            final_response = resp.content
+            _slog("📤 REPLY", str(final_response)[:600] if final_response is not None else '')
+            _slog("🏁 DONE", "success=True")
             return {"status": "ok", "result": resp.content}
 
         # Append assistant message with tool calls
@@ -125,6 +150,8 @@ async def run(inp: dict) -> dict:
                 result = f"Error: tool '{tc.name}' raised {type(e).__name__}: {e}"
             history.append(Message(role="tool", content=result, tool_call_id=tc.id))
 
+    _slog("📤 REPLY", str(final_response)[:600] if final_response is not None else '')
+    _slog("🏁 DONE", "success=False max_turns_reached")
     return {
         "status": "error",
         "error": f"Max turns ({MAX_TURNS}) reached without completion.",
@@ -132,6 +159,13 @@ async def run(inp: dict) -> dict:
 
 
 def main():
+    logging.basicConfig(
+        stream=sys.stderr,
+        level=logging.DEBUG,
+        format='[%(asctime)s.%(msecs)03d] %(levelname)s %(message)s',
+        datefmt='%H:%M:%S',
+        force=True,
+    )
     raw = sys.stdin.read()
     try:
         inp = json.loads(raw)
