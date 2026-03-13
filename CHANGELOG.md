@@ -1,3 +1,12 @@
+## [2.3.0] — 2026-03-13
+
+### Added
+- Dashboard 新增小小兵瀏覽器、功能總覽和使用統計三個頁籤
+- **小小兵瀏覽器**：`GET /api/minions`，掃描 minions/*.md，提取名稱、說明、能力
+- **功能總覽**：`GET /api/features`，掃描 enterprise/*.py + channels/*.py，列出模組與函數
+- **使用統計**：`GET /api/usage`，群組訊息排行 + 任務執行統計（成功率、平均耗時）
+- Dashboard UI 新增 🤖 Minions / ⚙️ Features / 📈 使用統計 三個頁籤
+
 ## [2.2.0] — 2026-03-13
 
 ### Added
