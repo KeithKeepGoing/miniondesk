@@ -1,3 +1,9 @@
+## [2.4.2] — 2026-03-13
+
+### Fixed
+- dashboard.py: showContainerLog 雙 key 查找修復 undefined 問題（numeric + string key fallback）
+- db.py: stderr 儲存限制從 8KB 提升至 32KB
+
 ## [2.4.1] — 2026-03-13
 
 ### Added

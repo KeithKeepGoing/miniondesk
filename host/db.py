@@ -626,7 +626,7 @@ def log_container_finish(
             (
                 finished_at,
                 status,
-                (stderr or "")[:8192],
+                (stderr or "")[:32768],
                 (stdout_preview or "")[:2048],
                 response_ms,
                 run_id,
