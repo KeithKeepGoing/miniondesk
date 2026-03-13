@@ -1,3 +1,8 @@
+## [2.4.8] — 2026-03-13
+
+### Added
+- `.env.example`: 更新 `GITHUB_TOKEN` 說明，標示為必要設定，附 GitHub settings token 連結
+
 ## [2.4.7] — 2026-03-13
 
 ### Fixed

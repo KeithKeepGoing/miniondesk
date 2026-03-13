@@ -6,6 +6,7 @@
 
 | 版本 | 摘要 |
 |------|------|
+| **v2.4.8** | `.env.example` 更新 `GITHUB_TOKEN` 說明，標示必要，讓用戶知道需填入 token |
 | **v2.4.7** | Dockerfile 安裝 gh CLI + `_ALLOWED_SECRET_KEYS` 加入 GITHUB_TOKEN + `gh auth setup-git` + git identity |
 | **v2.4.6** | `get_secrets()` 加入 `GITHUB_TOKEN` / `GH_TOKEN`，修復 container 永遠無法 gh auth 的根本原因 |
 | **v2.4.5** | Container 啟動時自動執行 gh auth login（GITHUB_TOKEN 自動認證 gh CLI） |
