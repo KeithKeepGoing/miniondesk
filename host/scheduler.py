@@ -3,6 +3,7 @@ Task Scheduler: runs scheduled tasks at appropriate times.
 """
 from __future__ import annotations
 import asyncio
+import time as _time
 from datetime import datetime, timezone
 from typing import Callable
 
@@ -61,6 +62,28 @@ def _cron_matches(cron_expr: str, now: datetime) -> bool:
         return False
 
 
+async def _run_task_with_logging(on_task: Callable, task: dict) -> None:
+    """Execute a task and record the run in task_run_logs."""
+    task_id = task.get("id", "<unknown>")
+    chat_jid = task.get("chat_jid", "")
+    start_ms = int(_time.time() * 1000)
+    try:
+        result = await on_task(task)
+        duration = int(_time.time() * 1000) - start_ms
+        result_text = str(result)[:500] if result is not None else None
+        try:
+            db.log_task_run(task_id, chat_jid, "success", result=result_text, duration_ms=duration)
+        except Exception:
+            pass
+    except Exception as exc:
+        duration = int(_time.time() * 1000) - start_ms
+        try:
+            db.log_task_run(task_id, chat_jid, "error", error=str(exc)[:500], duration_ms=duration)
+        except Exception:
+            pass
+        raise
+
+
 async def run_scheduler(on_task: Callable) -> None:
     """Check and run due scheduled tasks every 60 seconds."""
     while True:
@@ -83,12 +106,12 @@ async def run_scheduler(on_task: Callable) -> None:
 
                 if stype == "cron":
                     if _cron_matches(sval, now):
-                        await on_task(task)
+                        await _run_task_with_logging(on_task, task)
                         db.update_task_last_run(task_id)
                 elif stype == "once":
                     run_at = datetime.fromisoformat(sval.replace("Z", "+00:00"))
                     if now >= run_at and not task.get("last_run"):
-                        await on_task(task)
+                        await _run_task_with_logging(on_task, task)
                         db.update_task_last_run(task_id)
                 elif stype == "interval":
                     interval_ms = int(sval)
@@ -97,7 +120,7 @@ async def run_scheduler(on_task: Callable) -> None:
                         continue
                     last = task.get("last_run")
                     if not last:
-                        await on_task(task)
+                        await _run_task_with_logging(on_task, task)
                         db.update_task_last_run(task_id)
                     else:
                         last_dt = datetime.fromisoformat(last)
@@ -105,7 +128,7 @@ async def run_scheduler(on_task: Callable) -> None:
                             last_dt = last_dt.replace(tzinfo=timezone.utc)
                         elapsed_ms = (now - last_dt).total_seconds() * 1000
                         if elapsed_ms >= interval_ms:
-                            await on_task(task)
+                            await _run_task_with_logging(on_task, task)
                             db.update_task_last_run(task_id)
             except Exception as e:
                 _log.error(f"Error with task {task.get('id', '<unknown>')}: {e}")

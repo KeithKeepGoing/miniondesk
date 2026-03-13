@@ -1,3 +1,17 @@
+## [2.2.0] — 2026-03-13
+
+### Added
+- Dashboard 全面補強 — 從 8 個 API endpoint 擴展到 14 個
+- **任務管理**：`GET /api/tasks`、`POST /api/tasks/{id}/cancel`
+- **任務執行歷史**：`GET /api/task-runs`；新增 `task_run_logs` DB 表
+- **對話歷史瀏覽器**：`GET /api/messages`，按群組瀏覽完整對話
+- **記憶查看器**：`GET /api/memory`，熱記憶（MEMORY.md）+ 暖記憶日誌
+- **知識庫瀏覽器**：`GET /api/knowledge`，FTS5 搜尋 + 文件列表
+- Dashboard UI 新增 7 個頁籤（概覽/任務/對話/記憶/知識庫/工作流程/審計）
+- `scheduler.py` 每次任務執行後自動記錄結果到 `task_run_logs`
+- `db.py` 新增 `log_task_run()`、`get_task_run_logs()`、`get_kb_docs()` 函數
+- KPI 卡片新增「排程任務」計數
+
 ## [2.1.1] — 2026-03-13
 
 ### Fixed
