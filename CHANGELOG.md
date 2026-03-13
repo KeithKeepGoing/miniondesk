@@ -1,3 +1,12 @@
+## [2.4.0] — 2026-03-13
+
+### Added
+- 新增 `container_logs` 表，記錄每次小小兵 Container 執行的 stderr/stdout 預覽、耗時與狀態
+- `db.py` 新增 `log_container_start()`、`log_container_finish()`、`get_container_logs()` 函數
+- `runner.py` 在所有執行路徑（success / error / timeout / FileNotFoundError）記錄 Container Log
+- Dashboard 新增 🐳 Container Logs 頁籤，支援按群組 / 狀態篩選
+- 新增 `GET /api/container-logs` API endpoint（支援 jid / status / limit 參數）
+
 ## [2.3.0] — 2026-03-13
 
 ### Added

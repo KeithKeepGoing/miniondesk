@@ -7,6 +7,8 @@ import asyncio
 import json
 import os
 import re
+import time
+import uuid
 from pathlib import Path
 from typing import Optional
 
@@ -103,6 +105,12 @@ async def run_container(
     ]
 
     proc = None
+    _run_id = str(uuid.uuid4())[:8]
+    _started_at = time.time()
+    try:
+        db.log_container_start(_run_id, chat_jid, minion_name, _started_at)
+    except Exception:
+        pass
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -115,13 +123,20 @@ async def run_container(
             timeout=config.CONTAINER_TIMEOUT,
         )
 
+        _finished_at = time.time()
+        _response_ms = int((_finished_at - _started_at) * 1000)
+        _stderr_str = stderr.decode(errors="replace") if stderr else ""
+        _stdout_preview = stdout.decode(errors="replace")[:200] if stdout else ""
+
         if stderr:
-            _log.warning(f"container stderr [{minion_name}]: {stderr.decode()[:500]}")
+            _log.warning(f"container stderr [{minion_name}]: {_stderr_str[:500]}")
 
         if not stdout.strip():
+            db.log_container_finish(_run_id, _finished_at, "error", _stderr_str, _stdout_preview, _response_ms)
             return {"status": "error", "error": "Container produced no output"}
 
         result = json.loads(stdout.decode())
+        db.log_container_finish(_run_id, _finished_at, "success", _stderr_str, _stdout_preview, _response_ms)
         if isinstance(result, dict) and result.get("memory_patch"):
             try:
                 update_hot_memory(chat_jid, result["memory_patch"])
@@ -136,12 +151,17 @@ async def run_container(
                 await proc.wait()
             except Exception:
                 pass
+        db.log_container_finish(_run_id, time.time(), "timeout", "Container timed out", "", int(config.CONTAINER_TIMEOUT * 1000))
         return {"status": "error", "error": f"⏱️ 處理超時（{config.CONTAINER_TIMEOUT}秒），請稍後再試。"}
     except json.JSONDecodeError as e:
         preview = stdout[:200] if stdout else b"(empty)"
         _log.error(f"Container JSON decode error: {e} | stdout preview: {preview!r}")
-        return {"status": "error", "error": f"Container output parse error: {e}", "raw": preview.decode(errors="replace")}
+        _err_str = f"Container output parse error: {e}"
+        db.log_container_finish(_run_id, time.time(), "error", _err_str, preview.decode(errors="replace"), int((time.time() - _started_at) * 1000))
+        return {"status": "error", "error": _err_str, "raw": preview.decode(errors="replace")}
     except FileNotFoundError:
+        db.log_container_finish(_run_id, time.time(), "error", "Docker not found", "", int((time.time() - _started_at) * 1000))
         return {"status": "error", "error": "❌ Docker 未安裝或未啟動，請確認 Docker 服務正在運行。"}
     except Exception as e:
+        db.log_container_finish(_run_id, time.time(), "error", str(e), "", int((time.time() - _started_at) * 1000))
         return {"status": "error", "error": f"❌ 系統錯誤：{e}"}

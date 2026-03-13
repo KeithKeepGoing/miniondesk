@@ -210,6 +210,27 @@ def _create_tables():
     except Exception:
         pass
 
+    # Container execution log
+    try:
+        _conn.execute("""CREATE TABLE IF NOT EXISTS container_logs (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_id          TEXT NOT NULL DEFAULT '',
+            jid             TEXT NOT NULL,
+            minion_name     TEXT NOT NULL DEFAULT '',
+            started_at      REAL NOT NULL,
+            finished_at     REAL,
+            status          TEXT NOT NULL DEFAULT 'running',
+            stderr          TEXT,
+            stdout_preview  TEXT,
+            response_ms     INTEGER
+        )""")
+        _conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_md_container_logs_jid ON container_logs(jid, started_at DESC)"
+        )
+        _conn.commit()
+    except Exception:
+        pass
+
 
 def get_conn() -> sqlite3.Connection:
     if _conn is None:
@@ -572,3 +593,71 @@ def get_kb_docs(search: str = None, limit: int = 20) -> list[dict]:
             (limit,)
         ).fetchall()
     return [{"title": r[0], "content": (r[1] or "")[:300], "source": r[2]} for r in rows]
+
+
+# ── Container Logs ─────────────────────────────────────────────────────────────
+
+def log_container_start(run_id: str, jid: str, minion_name: str, started_at: float) -> None:
+    """Insert a running row when a container starts."""
+    try:
+        _conn.execute(
+            "INSERT INTO container_logs (run_id, jid, minion_name, started_at, status)"
+            " VALUES (?, ?, ?, ?, 'running')",
+            (run_id, jid, minion_name, started_at),
+        )
+        _conn.commit()
+    except Exception:
+        pass
+
+
+def log_container_finish(
+    run_id: str,
+    finished_at: float,
+    status: str,
+    stderr: str,
+    stdout_preview: str,
+    response_ms: int,
+) -> None:
+    """Update container_logs row when a container finishes."""
+    try:
+        _conn.execute(
+            "UPDATE container_logs SET finished_at=?, status=?, stderr=?, stdout_preview=?, response_ms=?"
+            " WHERE run_id=?",
+            (
+                finished_at,
+                status,
+                (stderr or "")[:8192],
+                (stdout_preview or "")[:2048],
+                response_ms,
+                run_id,
+            ),
+        )
+        _conn.commit()
+    except Exception:
+        pass
+
+
+def get_container_logs(jid: str = "", limit: int = 50, status: str = "") -> list[dict]:
+    """Return recent container run logs."""
+    try:
+        parts: list[str] = []
+        params: list = []
+        if jid:
+            parts.append("jid = ?")
+            params.append(jid)
+        if status:
+            parts.append("status = ?")
+            params.append(status)
+        where = ("WHERE " + " AND ".join(parts)) if parts else ""
+        params.append(limit)
+        cols = ["id", "run_id", "jid", "minion_name", "started_at", "finished_at",
+                "status", "stderr", "stdout_preview", "response_ms"]
+        rows = _conn.execute(
+            f"SELECT id, run_id, jid, minion_name, started_at, finished_at, status,"
+            f" stderr, stdout_preview, response_ms"
+            f" FROM container_logs {where} ORDER BY started_at DESC LIMIT ?",
+            params,
+        ).fetchall()
+        return [dict(zip(cols, r)) for r in rows]
+    except Exception:
+        return []
