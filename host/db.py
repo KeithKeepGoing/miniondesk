@@ -192,6 +192,24 @@ def _create_tables():
     except Exception:
         pass  # May fail if already exists or trigram not available; degrade gracefully
 
+    # Task execution history log
+    try:
+        _conn.execute("""CREATE TABLE IF NOT EXISTS task_run_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id TEXT NOT NULL,
+            chat_jid TEXT NOT NULL,
+            run_at TEXT NOT NULL DEFAULT (datetime('now')),
+            status TEXT NOT NULL DEFAULT 'success',
+            result TEXT,
+            error TEXT,
+            duration_ms INTEGER
+        )""")
+        _conn.execute("CREATE INDEX IF NOT EXISTS idx_task_run_logs_task_id ON task_run_logs(task_id)")
+        _conn.execute("CREATE INDEX IF NOT EXISTS idx_task_run_logs_chat ON task_run_logs(chat_jid)")
+        _conn.commit()
+    except Exception:
+        pass
+
 
 def get_conn() -> sqlite3.Connection:
     if _conn is None:
@@ -499,3 +517,58 @@ def record_weekly_compound(jid: str) -> None:
         (jid, _t.time()),
     )
     _conn.commit()
+
+
+# ── Task Run Logs ──────────────────────────────────────────────────────────────
+
+def get_task_run_logs(task_id: str = None, chat_jid: str = None, limit: int = 50) -> list[dict]:
+    conn = get_conn()
+    cols = ["id", "task_id", "chat_jid", "run_at", "status", "result", "error", "duration_ms"]
+    if task_id:
+        rows = conn.execute(
+            "SELECT id, task_id, chat_jid, run_at, status, result, error, duration_ms "
+            "FROM task_run_logs WHERE task_id=? ORDER BY run_at DESC LIMIT ?",
+            (task_id, limit)
+        ).fetchall()
+    elif chat_jid:
+        rows = conn.execute(
+            "SELECT id, task_id, chat_jid, run_at, status, result, error, duration_ms "
+            "FROM task_run_logs WHERE chat_jid=? ORDER BY run_at DESC LIMIT ?",
+            (chat_jid, limit)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT id, task_id, chat_jid, run_at, status, result, error, duration_ms "
+            "FROM task_run_logs ORDER BY run_at DESC LIMIT ?",
+            (limit,)
+        ).fetchall()
+    return [dict(zip(cols, r)) for r in rows]
+
+
+def log_task_run(task_id: str, chat_jid: str, status: str, result: str = None, error: str = None, duration_ms: int = None) -> None:
+    conn = get_conn()
+    conn.execute(
+        "INSERT INTO task_run_logs(task_id, chat_jid, status, result, error, duration_ms) VALUES(?,?,?,?,?,?)",
+        (task_id, chat_jid, status, result, error, duration_ms)
+    )
+    conn.commit()
+
+
+# ── Knowledge Base ─────────────────────────────────────────────────────────────
+
+def get_kb_docs(search: str = None, limit: int = 20) -> list[dict]:
+    conn = get_conn()
+    if search:
+        try:
+            rows = conn.execute(
+                "SELECT title, content, source FROM kb_chunks WHERE kb_chunks MATCH ? LIMIT ?",
+                (search, limit)
+            ).fetchall()
+        except Exception:
+            rows = []
+    else:
+        rows = conn.execute(
+            "SELECT title, content, source FROM kb_chunks_plain ORDER BY id DESC LIMIT ?",
+            (limit,)
+        ).fetchall()
+    return [{"title": r[0], "content": (r[1] or "")[:300], "source": r[2]} for r in rows]
