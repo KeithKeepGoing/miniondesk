@@ -1,3 +1,20 @@
+# v2.4.4 — Container Tool Log 截斷上限提升至 1500 字
+
+**Released**: 2026-03-13
+
+新增 `runner.py` tool call 與 result 的 structured log，方便在 Container Logs dashboard 查看完整 bash command 和執行結果。
+
+## 新功能
+
+### 🔧 Tool Call / Result Log
+在每次工具執行前後加入 `_slog` 記錄：
+- `🔧 TOOL`：工具名稱 + args（最多 1500 字元）
+- `🔧 RESULT`：工具執行結果（最多 1500 字元）
+
+可在 Container Logs 頁籤的 stderr 欄位看到每個工具的呼叫明細與完整輸出。
+
+---
+
 # v2.4.3 — Container Runner logging 修復 + System Prompt 記錄
 
 **Released**: 2026-03-13

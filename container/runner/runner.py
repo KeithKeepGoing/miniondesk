@@ -137,6 +137,7 @@ async def run(inp: dict) -> dict:
 
         # Execute each tool call
         for tc in resp.tool_calls:
+            _slog("🔧 TOOL", f"{tc.name} args={str(getattr(tc, 'arguments', tc.args))[:1500]}")
             try:
                 result = await asyncio.wait_for(
                     asyncio.to_thread(registry.execute, tc.name, tc.args, ctx),
@@ -148,6 +149,7 @@ async def run(inp: dict) -> dict:
                 tb = traceback.format_exc()
                 log.error("Tool '%s' raised an exception: %s", tc.name, tb)
                 result = f"Error: tool '{tc.name}' raised {type(e).__name__}: {e}"
+            _slog("🔧 RESULT", str(result)[:1500])
             history.append(Message(role="tool", content=result, tool_call_id=tc.id))
 
     _slog("📤 REPLY", str(final_response)[:600] if final_response is not None else '')
