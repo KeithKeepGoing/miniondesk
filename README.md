@@ -2,13 +2,15 @@
 
 > 企業內部 IT AI Copilot — IC 設計產業專屬 × 模型無關 × Docker 隔離 × 完全自架
 
-## 版本記錄
+### Recent Releases
 
-v2.4.5 — Container 啟動時自動執行 gh auth login（GITHUB_TOKEN 自動認證 gh CLI）
-v2.4.4 — Container Tool Log 截斷上限提升至 1500 字（🔧 TOOL args + 🔧 RESULT 完整記錄）
-v2.4.3 — Container Runner logging 修復 + System Prompt 記錄（logging.basicConfig + _slog）
-v2.4.2 — Container Logs Modal undefined 修復 + stderr 儲存限制 8KB → 32KB
-v2.4.1 — Container Logs Dashboard 全文 Stderr 展開查看器（📋 展開按鈕 + Modal）
+| 版本 | 摘要 |
+|------|------|
+| **v2.4.5** | Container 啟動時自動執行 gh auth login（GITHUB_TOKEN 自動認證 gh CLI） |
+| **v2.4.4** | Container Tool Log 截斷上限提升至 1500 字（🔧 TOOL args + 🔧 RESULT 完整記錄） |
+| **v2.4.3** | Container Runner logging 修復 + System Prompt 記錄（logging.basicConfig + _slog） |
+| **v2.4.2** | Container Logs Modal undefined 修復 + stderr 儲存限制 8KB → 32KB |
+| **v2.4.1** | Container Logs Dashboard 全文 Stderr 展開查看器（📋 展開按鈕 + Modal） |
 
 ---
 
