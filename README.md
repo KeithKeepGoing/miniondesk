@@ -4,6 +4,7 @@
 
 ## 版本記錄
 
+v2.1.1 — 修復關機時 Telegram CRITICAL CancelledError 誤報（先斷頻道再取消 tasks）
 v2.1.0 — 三層記憶系統（熱/暖/冷記憶 + FTS5 混合搜尋 + Weekly Compound）
 
 ---
