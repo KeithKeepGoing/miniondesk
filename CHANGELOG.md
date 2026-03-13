@@ -1,3 +1,11 @@
+## [2.4.1] — 2026-03-13
+
+### Added
+- Dashboard 🐳 Container Logs 頁籤新增「📋 展開」按鈕，點擊後彈出 Modal 顯示完整 stderr
+- Stderr 預覽從最後 3 行增加到最後 5 行
+- Modal 以 Monospace 字體顯示完整 container log，可捲動，方便除錯
+- 使用 JS Map (`_clFullLogs`) 暫存每筆記錄的完整 stderr，避免重複請求
+
 ## [2.4.0] — 2026-03-13
 
 ### Added
