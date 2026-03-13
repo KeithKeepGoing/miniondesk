@@ -160,6 +160,23 @@ async def start_dashboard(port: int = DASHBOARD_PORT) -> None:
             log.error("get_knowledge error: %s", e)
             return JSONResponse({"docs": [], "error": str(e)})
 
+    # ── Container Logs ─────────────────────────────────────────────────────────
+
+    @app.get("/api/container-logs")
+    async def get_container_logs(
+        jid: str = Query(default=""),
+        status: str = Query(default=""),
+        limit: int = Query(default=50, ge=1, le=500),
+        creds=Depends(verify_auth)
+    ):
+        from host import db
+        try:
+            rows = db.get_container_logs(jid=jid, limit=limit, status=status)
+            return JSONResponse({"logs": rows, "count": len(rows)})
+        except Exception as e:
+            log.error("get_container_logs error: %s", e)
+            return JSONResponse({"logs": [], "count": 0, "error": str(e)})
+
     @app.get("/api/minions")
     async def get_minions(creds=Depends(verify_auth)):
         return JSONResponse(_get_minions())
@@ -547,7 +564,7 @@ select:focus, input:focus { outline: none; border-color: #58a6ff; }
 <header>
   <span style="font-size:1.5rem">🍌</span>
   <h1>MinionDesk Admin Dashboard</h1>
-  <span class="badge">v2.3.0</span>
+  <span class="badge">v2.4.0</span>
   <button class="refresh-btn" onclick="loadCurrentTab()" style="margin-left:auto">🔄 更新</button>
 </header>
 <div class="container">
@@ -564,6 +581,7 @@ select:focus, input:focus { outline: none; border-color: #58a6ff; }
     <button class="tab-btn" onclick="switchTab('minions')">🤖 Minions</button>
     <button class="tab-btn" onclick="switchTab('features')">⚙️ Features</button>
     <button class="tab-btn" onclick="switchTab('usage')">📈 使用統計</button>
+    <button class="tab-btn" onclick="switchTab('container-logs')">🐳 Container Logs</button>
   </div>
 
   <!-- OVERVIEW TAB -->
@@ -729,6 +747,9 @@ select:focus, input:focus { outline: none; border-color: #58a6ff; }
     </div>
   </div>
 
+  <!-- CONTAINER LOGS TAB -->
+  <div id="tab-container-logs" class="tab-panel"></div>
+
 </div>
 
 <script>
@@ -788,6 +809,7 @@ function loadTabData(name) {
     case 'minions': loadMinions(); break;
     case 'features': loadFeatures(); break;
     case 'usage': loadUsage(); break;
+    case 'container-logs': loadContainerLogs(); break;
   }
 }
 
@@ -1118,6 +1140,54 @@ async function loadUsage() {
     msgEl.innerHTML = '';
     taskEl.innerHTML = '';
   }
+}
+
+// ── Container Logs ─────────────────────────────────────────────────────────
+let _clJid = '', _clStatus = '';
+async function loadContainerLogs() {
+  let qs = '';
+  if (_clJid) qs += '&jid=' + encodeURIComponent(_clJid);
+  if (_clStatus) qs += '&status=' + encodeURIComponent(_clStatus);
+  const data = await api('/api/container-logs?limit=100' + qs);
+  const logs = data?.logs || [];
+  const groups = [...new Set(logs.map(r => r.jid).filter(Boolean))];
+
+  let html = '<div class="section"><h2>🐳 Container Logs</h2>';
+  html += '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px">';
+  html += `<select onchange="_clJid=this.value;loadContainerLogs()" style="background:#0d1117;color:#c9d1d9;border:1px solid #30363d;padding:6px;border-radius:4px">`;
+  html += '<option value="">所有群組</option>';
+  for (const g of groups) html += `<option value="${esc(g)}" ${g===_clJid?'selected':''}>${esc(g)}</option>`;
+  html += '</select>';
+  html += `<select onchange="_clStatus=this.value;loadContainerLogs()" style="background:#0d1117;color:#c9d1d9;border:1px solid #30363d;padding:6px;border-radius:4px">`;
+  html += '<option value="">所有狀態</option>';
+  for (const s of ['success','error','timeout','running'])
+    html += `<option value="${s}" ${s===_clStatus?'selected':''}>${s}</option>`;
+  html += '</select>';
+  html += `<span style="color:#8b949e;font-size:12px">${logs.length} 筆</span>`;
+  html += '</div>';
+
+  if (!logs.length) {
+    html += '<span style="color:#8b949e">尚無 Container 執行記錄</span>';
+  } else {
+    html += '<table><thead><tr><th>時間</th><th>群組</th><th>Minion</th><th>狀態</th><th>耗時</th><th>Stderr / 摘要</th></tr></thead><tbody>';
+    for (const r of logs) {
+      const ts = r.started_at ? new Date(r.started_at * 1000).toLocaleString('zh-TW') : '—';
+      const dur = r.response_ms != null ? r.response_ms + ' ms' : '—';
+      const stColor = r.status==='success'?'#3fb950':r.status==='running'?'#58a6ff':'#f85149';
+      const preview = (r.stderr||'').split('\\n').filter(Boolean).slice(-3).join('\\n') || r.stdout_preview || '—';
+      html += `<tr>
+        <td style="font-size:11px;white-space:nowrap">${ts}</td>
+        <td style="font-size:10px;color:#8b949e;max-width:130px;overflow:hidden;text-overflow:ellipsis">${esc(r.jid)}</td>
+        <td style="color:#58a6ff;font-size:12px">${esc(r.minion_name||'—')}</td>
+        <td><span style="color:${stColor};font-weight:bold">${esc(r.status)}</span></td>
+        <td style="color:#bc8cff">${esc(dur)}</td>
+        <td style="font-size:10px;max-width:380px;white-space:pre-wrap;word-break:break-all;color:#8b949e">${esc(preview)}</td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+  }
+  html += '</div>';
+  document.getElementById('tab-container-logs').innerHTML = html;
 }
 
 // ── Init ────────────────────────────────────────────────────────────────────

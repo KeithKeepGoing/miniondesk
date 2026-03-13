@@ -1,3 +1,35 @@
+# v2.4.0 — Container 執行 Log 持久化 + Dashboard 查看器
+
+**Released**: 2026-03-13
+
+小小兵 Container 的 stderr/stdout 現在完整記錄到 SQLite DB，並可在 Dashboard 的新頁籤中查看與篩選。
+
+## 新功能
+
+### 🐳 Container Logs DB 持久化
+每次 `run_container()` 執行時，自動記錄到 `container_logs` 表：
+- `run_id`：每次執行的唯一 ID（UUID 前 8 碼）
+- `started_at` / `finished_at`：開始 / 結束 UNIX 時間戳
+- `status`：`running` → `success` / `error` / `timeout`
+- `stderr`：完整 stderr 輸出（最多 8192 字元）
+- `stdout_preview`：stdout 前 200 字元（JSON 解析前）
+- `response_ms`：Container 執行耗時（毫秒）
+
+### 🐳 Dashboard Container Logs 頁籤
+新增 `/api/container-logs` endpoint 與 Dashboard 頁籤，支援：
+- 按群組（jid）篩選
+- 按狀態（success / error / timeout / running）篩選
+- 顯示最近 100 筆，含時間、群組、Minion、狀態、耗時、Stderr 摘要
+
+## 新增 API Endpoints
+- `GET /api/container-logs` — Container 執行記錄（支援 jid / status / limit 參數）
+
+## DB 變更
+- 新增 `container_logs` 表
+- 新增索引：`idx_md_container_logs_jid`
+
+---
+
 # v2.3.0 — Dashboard 小小兵瀏覽器 + 功能總覽 + 使用統計
 
 **Released**: 2026-03-13
