@@ -1,3 +1,13 @@
+# v2.1.1 — Telegram 關機 CRITICAL 日誌修復
+
+**Released**: 2026-03-13
+
+修正關機時的誤導性 `CRITICAL CancelledError` 日誌。根本原因是關機順序：先取消 asyncio tasks 再 disconnect 頻道，導致 telegram library 把正常的 CancelledError 記錄為 CRITICAL。
+
+修復：先 disconnect 頻道 → 再取消 tasks。
+
+---
+
 # v2.1.0 — 三層記憶系統
 
 *Released*: 2026-03-13

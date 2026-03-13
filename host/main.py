@@ -291,6 +291,22 @@ async def _shutdown():
     _shutting_down = True
     log = get_logger("main")
     log.info("Shutting down gracefully...")
+
+    # Disconnect channels FIRST so Telegram/Discord can stop cleanly
+    # before asyncio tasks are cancelled.  Reversing this order causes
+    # python-telegram-bot's update_fetcher_task to be cancelled while
+    # app.stop() is still running, producing a misleading CRITICAL log.
+    try:
+        from host.channels import all_channels
+        for name, chan in all_channels().items():
+            if hasattr(chan, "disconnect"):
+                try:
+                    await chan.disconnect()
+                except Exception as e:
+                    log.warning("Channel %s disconnect error: %s", name, e)
+    except Exception as e:
+        log.warning("Channel disconnect phase error: %s", e)
+
     tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
     for task in tasks:
         task.cancel()
