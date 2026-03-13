@@ -1,3 +1,19 @@
+# v2.4.2 — Container Logs Modal undefined 修復 + stderr 32KB
+
+**Released**: 2026-03-13
+
+修復 Container Logs Modal 顯示 undefined 的問題，並將 stderr 儲存限制從 8KB 提升至 32KB。
+
+## 修復
+
+### 📋 Container Logs Modal undefined 修復
+`showContainerLog()` 改用雙 key（numeric + string）查找，避免 JS 型別轉換導致 Map 查找失敗顯示 undefined。
+
+### 💾 stderr 儲存限制 8KB → 32KB
+`db.py` `log_container_finish()` 將 stderr 截斷從 8192 提升至 32768 字元，保留更多除錯資訊。
+
+---
+
 # v2.4.1 — Container Logs Dashboard 全文 Stderr 展開查看器
 
 **Released**: 2026-03-13
