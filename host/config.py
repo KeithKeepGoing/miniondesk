@@ -169,6 +169,8 @@ def get_secrets() -> dict:
         "CLAUDE_MODEL",
         "GEMINI_MODEL",
         "OPENAI_MODEL",
+        "GITHUB_TOKEN",
+        "GH_TOKEN",
     ]:
         val = os.getenv(key, "")
         if val:

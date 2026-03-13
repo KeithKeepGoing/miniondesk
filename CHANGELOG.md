@@ -1,3 +1,8 @@
+## [2.4.6] — 2026-03-13
+
+### Fixed
+- `host/config.py`: `get_secrets()` 加入 `GITHUB_TOKEN` / `GH_TOKEN`，修復 container 啟動時 gh CLI 永遠顯示 `⚠️ GH AUTH no GITHUB_TOKEN in secrets` 的根本原因
+
 ## [2.4.5] — 2026-03-13
 
 ### Fixed
