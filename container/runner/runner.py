@@ -110,6 +110,14 @@ async def run(inp: dict) -> dict:
 
     system = inp.get("personaMd", "You are a helpful assistant.")
 
+    # ── CRITICAL tool usage rules (appended to every persona) ─────────────────
+    system += (
+        "\n\n## CRITICAL: Tool Usage Rules\n"
+        "NEVER write bash/shell code blocks (```bash ... ```) in your response. This does NOTHING — the code will not be executed.\n"
+        "ALWAYS call the Bash tool directly to run any shell command. Every command you want to run MUST be a Bash tool call.\n"
+        "If you need to run multiple commands, make multiple Bash tool calls. Do not describe what you would do — DO IT."
+    )
+
     # Prepend conversation history to system prompt
     conv_history = inp.get("conversationHistory", "")
     if conv_history:
@@ -154,7 +162,35 @@ async def run(inp: dict) -> dict:
             }
 
         if resp.finish_reason == "stop" or not resp.tool_calls:
-            final_response = resp.content
+            # ── Fallback: detect bash code blocks the model forgot to run ─────
+            # Some models output ```bash blocks as text instead of calling the
+            # Bash tool. Auto-execute them and feed results back.
+            import re as _re_cb
+            _content = resp.content or ""
+            _code_blocks = _re_cb.findall(r'```(?:bash|sh|shell)?\n([\s\S]*?)```', _content)
+            _runnable = [b.strip() for b in _code_blocks if b.strip()]
+            if _runnable and turn < MAX_TURNS - 1:
+                _slog("⚠️ AUTO-EXEC", f"model output {len(_runnable)} code block(s) as text — auto-executing")
+                _exec_outputs = []
+                for _cmd in _runnable:
+                    _slog("🔧 TOOL", f"Bash (fallback) args={_cmd[:300]}")
+                    try:
+                        _res = await asyncio.wait_for(
+                            asyncio.to_thread(registry.execute, "Bash", {"command": _cmd}, ctx),
+                            timeout=_TOOL_TIMEOUT,
+                        )
+                    except Exception as _exec_e:
+                        _res = f"Error: {_exec_e}"
+                    _slog("🔧 RESULT", str(_res)[:1500])
+                    _exec_outputs.append(f"$ {_cmd[:200]}\n{_res}")
+                _combined = "\n\n".join(_exec_outputs)
+                history.append(Message(
+                    role="user",
+                    content=f"[系統自動執行了 {len(_runnable)} 個指令]\n{_combined}\n\n請根據以上輸出，繼續任務並回報最終結果。",
+                ))
+                continue
+            # No code blocks — model is genuinely done
+            final_response = _content
             _slog("📤 REPLY", str(final_response)[:600] if final_response is not None else '')
             _slog("🏁 DONE", "success=True")
             return {"status": "ok", "result": resp.content}

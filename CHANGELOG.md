@@ -1,3 +1,9 @@
+## [2.4.9] — 2026-03-13
+
+### Fixed
+- `container/runner/runner.py`: 加入 bash code block 自動執行 fallback — 模型輸出 ` ```bash ` 代碼塊時自動偵測並執行，結果回饋 history 繼續迴圈
+- `container/runner/runner.py`: 每個 persona 系統提示後加入 CRITICAL 工具警告 — 明確禁止輸出 code blocks，要求 ALWAYS call Bash tool directly
+
 ## [2.4.8] — 2026-03-13
 
 ### Added
