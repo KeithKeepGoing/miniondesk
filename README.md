@@ -6,6 +6,7 @@
 
 | 版本 | 摘要 |
 |------|------|
+| **v2.4.6** | `get_secrets()` 加入 `GITHUB_TOKEN` / `GH_TOKEN`，修復 container 永遠無法 gh auth 的根本原因 |
 | **v2.4.5** | Container 啟動時自動執行 gh auth login（GITHUB_TOKEN 自動認證 gh CLI） |
 | **v2.4.4** | Container Tool Log 截斷上限提升至 1500 字（🔧 TOOL args + 🔧 RESULT 完整記錄） |
 | **v2.4.3** | Container Runner logging 修復 + System Prompt 記錄（logging.basicConfig + _slog） |
