@@ -61,6 +61,28 @@ async def run(inp: dict) -> dict:
         # os.getenv(). The set written is strictly limited to _ALLOWED_SECRET_KEYS.
         os.environ[key] = val
 
+    # ── Auto-authenticate gh CLI ───────────────────────────────────────────────
+    _gh_token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN", "")
+    if _gh_token:
+        import subprocess as _subprocess
+        try:
+            _gh_result = _subprocess.run(
+                ["gh", "auth", "login", "--with-token"],
+                input=_gh_token.encode(),
+                capture_output=True,
+                timeout=10,
+            )
+            if _gh_result.returncode == 0:
+                _slog("🔑 GH AUTH", "gh CLI authenticated ✓")
+            else:
+                _slog("⚠️ GH AUTH", f"gh auth failed: {_gh_result.stderr.decode(errors='replace')[:200]}")
+        except FileNotFoundError:
+            _slog("⚠️ GH AUTH", "gh CLI not installed in container")
+        except Exception as _gh_exc:
+            _slog("⚠️ GH AUTH", f"gh auth error: {_gh_exc}")
+    else:
+        _slog("⚠️ GH AUTH", "no GITHUB_TOKEN in secrets — gh CLI unauthenticated")
+
     from providers.auto import get_provider
     from tools import build_registry, ToolContext
 

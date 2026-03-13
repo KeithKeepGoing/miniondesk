@@ -1,3 +1,9 @@
+## [2.4.5] — 2026-03-13
+
+### Fixed
+- runner.py: secrets 設入 env 後自動執行 `gh auth login --with-token`，解決 gh CLI / git push 無憑證問題
+- runner.py: 認證成功記錄 `🔑 GH AUTH gh CLI authenticated ✓`，失敗或 gh 未安裝亦有對應 `⚠️ GH AUTH` _slog 記錄
+
 ## [2.4.4] — 2026-03-13
 
 ### Added
