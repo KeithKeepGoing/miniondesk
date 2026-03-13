@@ -1,3 +1,20 @@
+# v2.4.5 — Container 啟動時自動執行 gh auth login
+
+**Released**: 2026-03-13
+
+修復 `runner.py` 中 gh CLI 無法使用的問題：secrets 設入 `os.environ` 後，自動執行 `gh auth login --with-token`。
+
+## 修復
+
+### 🔑 gh CLI 自動認證
+secrets 迴圈完成後立即從 `GITHUB_TOKEN` 或 `GH_TOKEN` 取得 token，呼叫 `gh auth login --with-token`：
+- 認證成功：`🔑 GH AUTH gh CLI authenticated ✓`
+- 認證失敗：`⚠️ GH AUTH gh auth failed: <stderr>`
+- gh 未安裝：`⚠️ GH AUTH gh CLI not installed in container`
+- 無 token：`⚠️ GH AUTH no GITHUB_TOKEN in secrets — gh CLI unauthenticated`
+
+---
+
 # v2.4.4 — Container Tool Log 截斷上限提升至 1500 字
 
 **Released**: 2026-03-13
