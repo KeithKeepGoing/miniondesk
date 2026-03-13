@@ -1,3 +1,20 @@
+# v2.4.1 — Container Logs Dashboard 全文 Stderr 展開查看器
+
+**Released**: 2026-03-13
+
+🐳 Container Logs 頁籤新增「📋 展開」按鈕，一鍵查看完整 Docker 容器 stderr 輸出。
+
+## 新功能
+
+### 📋 全文 Stderr Modal 查看器
+每筆 Container Log 記錄新增「📋 展開」按鈕：
+- 點擊後彈出 Modal，顯示完整 stderr（不截斷）
+- Monospace 字體，可捲動，方便複製除錯資訊
+- 使用 JS Map 暫存完整 log，避免重複 API 請求
+- Stderr 預覽從最後 3 行增加到最後 5 行
+
+---
+
 # v2.4.0 — Container 執行 Log 持久化 + Dashboard 查看器
 
 **Released**: 2026-03-13
