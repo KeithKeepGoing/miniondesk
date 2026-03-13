@@ -23,7 +23,8 @@ _ALLOWED_SECRET_KEYS = _re.compile(
     r'CONFLUENCE_TOKEN|SHAREPOINT_TOKEN|JIRA_TOKEN|LDAP_PASSWORD|'
     r'SMTP_PASSWORD|EMAIL_PASSWORD|TELEGRAM_TOKEN|DISCORD_TOKEN|'
     r'DOMINO_PASSWORD|DOMINO_AUTH_TOKEN|OLLAMA_URL|OLLAMA_MODEL|'
-    r'LLM_PROVIDER|CLAUDE_MODEL|GEMINI_MODEL|OPENAI_MODEL|OPENAI_BASE_URL)$'
+    r'LLM_PROVIDER|CLAUDE_MODEL|GEMINI_MODEL|OPENAI_MODEL|OPENAI_BASE_URL|'
+    r'GITHUB_TOKEN|GH_TOKEN)$'
 )
 
 log = logging.getLogger(__name__)
@@ -61,7 +62,9 @@ async def run(inp: dict) -> dict:
         # os.getenv(). The set written is strictly limited to _ALLOWED_SECRET_KEYS.
         os.environ[key] = val
 
-    # ── Auto-authenticate gh CLI ───────────────────────────────────────────────
+    # ── Auto-authenticate gh CLI + git credential helper ─────────────────────
+    # gh auth login  → authenticates gh CLI (gh repo create, gh pr create, etc.)
+    # gh auth setup-git → configures git credential helper so git push via HTTPS works
     _gh_token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN", "")
     if _gh_token:
         import subprocess as _subprocess
@@ -74,6 +77,12 @@ async def run(inp: dict) -> dict:
             )
             if _gh_result.returncode == 0:
                 _slog("🔑 GH AUTH", "gh CLI authenticated ✓")
+                # Configure git credential helper so git push/pull via HTTPS uses the token
+                _subprocess.run(["gh", "auth", "setup-git"], capture_output=True, timeout=10)
+                _slog("🔑 GH AUTH", "git credential helper configured ✓")
+                # Set git identity so commits don't fail with "Please tell me who you are"
+                _subprocess.run(["git", "config", "--global", "user.email", "minion@miniondesk.local"], capture_output=True)
+                _subprocess.run(["git", "config", "--global", "user.name", "MinionDesk Agent"], capture_output=True)
             else:
                 _slog("⚠️ GH AUTH", f"gh auth failed: {_gh_result.stderr.decode(errors='replace')[:200]}")
         except FileNotFoundError:

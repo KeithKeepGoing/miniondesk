@@ -1,3 +1,10 @@
+## [2.4.7] — 2026-03-13
+
+### Fixed
+- `container/Dockerfile`: 安裝 GitHub CLI (`gh`)，修復 container 內 `gh: command not found` 根本原因
+- `container/runner/runner.py`: `_ALLOWED_SECRET_KEYS` 加入 `GITHUB_TOKEN` / `GH_TOKEN`，修復 token 被過濾丟棄的問題
+- `container/runner/runner.py`: `gh auth login` 成功後執行 `gh auth setup-git` + `git config user.email/user.name`
+
 ## [2.4.6] — 2026-03-13
 
 ### Fixed
