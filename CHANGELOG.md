@@ -1,3 +1,10 @@
+## [2.4.3] — 2026-03-13
+
+### Fixed
+- runner.py: main() 加入 `logging.basicConfig(stream=sys.stderr)`，修復所有 log 完全靜音問題
+- runner.py: 新增 `_slog()` structured log 函數（仿 EvoClaw 風格，帶 emoji tag）
+- runner.py: run() 加入 USER / SYSTEM / HISTORY / LLM 呼叫 / REPLY 完整 log，Container Logs dashboard 現在可見輸出
+
 ## [2.4.2] — 2026-03-13
 
 ### Fixed

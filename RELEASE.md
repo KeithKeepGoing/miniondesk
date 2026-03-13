@@ -1,3 +1,28 @@
+# v2.4.3 — Container Runner logging 修復 + System Prompt 記錄
+
+**Released**: 2026-03-13
+
+修復 `runner.py` 完全靜音問題：`logging.getLogger` 沒有 `basicConfig`，所有 log 不輸出到 stderr。
+
+## 修復
+
+### 🔇 logging.basicConfig 補齊
+`main()` 開頭加入 `logging.basicConfig(stream=sys.stderr, level=logging.DEBUG, force=True)`，確保所有 `log.error` / `log.info` 呼叫都輸出到 stderr。
+
+### 📋 _slog() Structured Log 函數
+新增 `_slog(tag, msg)` 函數（仿 EvoClaw `_log` 風格），帶時間戳與 emoji tag，直接寫入 stderr。
+
+### 🔍 run() 完整執行 Log
+- `🚀 START`：personaName
+- `💬 USER`：prompt 前 400 字元
+- `📋 SYSTEM`：system prompt 長度 + 前 600 字元逐行輸出
+- `📚 HISTORY`：對話歷史筆數 + 最後 3 則
+- `🧠 LLM →/←`：每個 turn 的 LLM 呼叫與 stop_reason
+- `📤 REPLY`：最終回覆前 600 字元
+- `🏁 DONE`：成功 / 失敗狀態
+
+---
+
 # v2.4.2 — Container Logs Modal undefined 修復 + stderr 32KB
 
 **Released**: 2026-03-13
