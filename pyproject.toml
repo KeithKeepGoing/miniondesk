@@ -1,6 +1,6 @@
 [project]
 name = "miniondesk"
-version = "2.4.9"
+version = "2.4.10"
 description = "MinionDesk — Model-agnostic enterprise AI assistant framework"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -11,6 +11,8 @@ dependencies = [
     "discord.py>=2.3.0",
     "aiohttp>=3.9.0",
     "pyyaml>=6.0",
+    # .env loading — required for GITHUB_TOKEN and other secrets to be picked up
+    "python-dotenv>=1.0.0",
     # Enterprise / LDAP
     "ldap3>=2.9",
 ]

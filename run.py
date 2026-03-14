@@ -11,12 +11,18 @@ import os
 # Ensure local packages are importable
 sys.path.insert(0, os.path.dirname(__file__))
 
-# Load .env if present
+# Load .env — required for secrets (GITHUB_TOKEN, API keys, etc.) to be available
+# python-dotenv is a required dependency; warn loudly if missing.
 try:
     from dotenv import load_dotenv
     load_dotenv()
 except ImportError:
-    pass
+    print(
+        "WARNING: python-dotenv not installed. "
+        ".env file will NOT be loaded — API keys and GITHUB_TOKEN will be missing. "
+        "Run: pip install python-dotenv",
+        file=sys.stderr,
+    )
 
 
 def main():
