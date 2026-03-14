@@ -1,3 +1,9 @@
+## [2.4.10] — 2026-03-14
+
+### Fixed
+- `pyproject.toml`: 加入 `python-dotenv>=1.0.0` 為必要依賴 — 未安裝時 `.env` 不載入，導致 `GITHUB_TOKEN` 等所有 secrets 為空
+- `run.py`: `load_dotenv()` ImportError 由靜默跳過改為 stderr 警告，明確提示用戶安裝 `python-dotenv`
+
 ## [2.4.9] — 2026-03-13
 
 ### Fixed

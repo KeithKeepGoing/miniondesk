@@ -6,6 +6,7 @@
 
 | 版本 | 摘要 |
 |------|------|
+| **v2.4.10** | `python-dotenv` 列為必要依賴 + `run.py` 未安裝時改為明確警告，修復 `.env` 靜默不載入問題 |
 | **v2.4.9** | runner.py bash code block auto-exec fallback + CRITICAL 工具警告 — 對齊 EvoClaw v1.11.14 |
 | **v2.4.8** | `.env.example` 更新 `GITHUB_TOKEN` 說明，標示必要，讓用戶知道需填入 token |
 | **v2.4.7** | Dockerfile 安裝 gh CLI + `_ALLOWED_SECRET_KEYS` 加入 GITHUB_TOKEN + `gh auth setup-git` + git identity |
