@@ -153,6 +153,14 @@ async def run_container(
                 pass
         db.log_container_finish(_run_id, time.time(), "timeout", "Container timed out", "", int(config.CONTAINER_TIMEOUT * 1000))
         return {"status": "error", "error": f"⏱️ 處理超時（{config.CONTAINER_TIMEOUT}秒），請稍後再試。"}
+    except asyncio.CancelledError:
+        # shutdown 時 task.cancel() 觸發 — 立即 kill container，不讓 Docker 程序繼續跑
+        if proc is not None:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        raise  # 必須 re-raise，讓 asyncio 正確完成 cancellation
     except json.JSONDecodeError as e:
         preview = stdout[:200] if stdout else b"(empty)"
         _log.error(f"Container JSON decode error: {e} | stdout preview: {preview!r}")

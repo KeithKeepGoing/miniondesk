@@ -249,14 +249,35 @@ async def main() -> None:
 
     # Graceful shutdown on SIGTERM/SIGINT
     loop = asyncio.get_running_loop()
+    _signal_count = [0]  # 用 list 讓雙層 closure 可以 mutate（Fix #159）
+
+    async def _safe_shutdown():
+        try:
+            await _shutdown()
+        except Exception as e:
+            log.error(f"Shutdown error: {e}")
 
     def _make_signal_handler():
-        async def _safe_shutdown():
-            try:
-                await _shutdown()
-            except Exception as e:
-                log.error(f"Shutdown error: {e}")
-        return lambda: asyncio.create_task(_safe_shutdown())
+        def _handler():
+            _signal_count[0] += 1
+            if _signal_count[0] >= 2:
+                # 第二次 Ctrl+C：強制 kill 所有 miniondesk- container 並立即退出
+                log.warning("Force exit (second signal). Killing all containers...")
+                import subprocess as _sp
+                try:
+                    result = _sp.run(
+                        ["docker", "ps", "-q", "--filter", "name=miniondesk-"],
+                        capture_output=True, timeout=3,
+                    )
+                    ids = result.stdout.decode().split()
+                    if ids:
+                        _sp.run(["docker", "kill"] + ids, capture_output=True, timeout=5)
+                except Exception:
+                    pass
+                import os as _os
+                _os._exit(1)
+            asyncio.create_task(_safe_shutdown())
+        return _handler
 
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, _make_signal_handler())
@@ -310,7 +331,14 @@ async def _shutdown():
     tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
     for task in tasks:
         task.cancel()
-    await asyncio.gather(*tasks, return_exceptions=True)
+    # 加 5 秒 timeout 防止 cleanup 本身卡住（Fix #159）
+    try:
+        await asyncio.wait_for(
+            asyncio.gather(*tasks, return_exceptions=True),
+            timeout=5.0,
+        )
+    except asyncio.TimeoutError:
+        log.warning("Task cleanup timed out — forcing exit")
 
 
 if __name__ == "__main__":

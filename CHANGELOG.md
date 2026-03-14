@@ -1,3 +1,11 @@
+## [2.4.11] — 2026-03-14
+
+### Fixed
+- `host/runner.py`: 新增 `except asyncio.CancelledError` handler — shutdown 時 `task.cancel()` 觸發後直接呼叫 `proc.kill()` 殺死 Docker subprocess，不讓 container 繼續跑 (Fix #159)
+- `host/main.py`: 第二次 Ctrl+C (SIGINT) → `docker ps` 找出所有 `miniondesk-` container + `docker kill` + 立即 `os._exit(1)` — 不再無限卡住 (Fix #159)
+- `host/main.py`: `asyncio.gather(*tasks, ...)` 加 **5 秒 timeout** — task cleanup 本身卡住時不再永久阻塞 (Fix #159)
+- `host/main.py`: signal handler 改用 `list[int]` 計數器取代 `nonlocal int` — 修復雙層 closure 無法正確 mutate 的 scoping bug (Fix #159)
+
 ## [2.4.10] — 2026-03-14
 
 ### Fixed
