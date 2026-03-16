@@ -47,7 +47,22 @@ def submit(workflow_type: str, submitter_jid: str, data: dict) -> str:
     return wf_id
 
 
+def _is_authorized_approver(jid: str) -> bool:
+    """Check if the JID belongs to a manager or admin."""
+    conn = db.get_conn()
+    row = conn.execute(
+        "SELECT role FROM employees WHERE jid = ?", (jid,)
+    ).fetchone()
+    return row is not None and row[0] in ("manager", "admin")
+
+
 def approve(workflow_id: str, approver_jid: str) -> bool:
+    if not _is_authorized_approver(approver_jid):
+        try:
+            db.audit(approver_jid, "workflow_approve_denied", workflow_id, "unauthorized")
+        except Exception:
+            pass
+        return False
     conn = db.get_conn()
     row = conn.execute(
         "SELECT workflow_type, submitter_jid FROM workflow_instances WHERE id = ? AND status = 'submitted'",
@@ -74,6 +89,12 @@ def approve(workflow_id: str, approver_jid: str) -> bool:
 
 
 def reject(workflow_id: str, rejector_jid: str, reason: str = "") -> bool:
+    if not _is_authorized_approver(rejector_jid):
+        try:
+            db.audit(rejector_jid, "workflow_reject_denied", workflow_id, "unauthorized")
+        except Exception:
+            pass
+        return False
     conn = db.get_conn()
     row = conn.execute(
         "SELECT workflow_type, submitter_jid FROM workflow_instances WHERE id = ? AND status = 'submitted'",
@@ -175,7 +196,22 @@ def check_expiry_and_reminders() -> int:
                 count += 1
 
             elif age_days >= WORKFLOW_REMINDER_DAYS:
-                # Send reminder to managers
+                # Only send reminder once per day: check updated_at to avoid spam (fixes #190)
+                try:
+                    updated = datetime.fromisoformat(
+                        conn.execute("SELECT updated_at FROM workflow_instances WHERE id=?", (wf_id,)).fetchone()[0]
+                    )
+                    hours_since_update = (now - updated).total_seconds() / 3600
+                    if hours_since_update < 24:
+                        continue  # Already reminded within the last 24 hours
+                except Exception:
+                    pass
+                # Mark as reminded by touching updated_at
+                conn.execute(
+                    "UPDATE workflow_instances SET updated_at=? WHERE id=?",
+                    (now.isoformat(), wf_id),
+                )
+                conn.commit()
                 managers = conn.execute(
                     "SELECT jid FROM employees WHERE role IN ('manager', 'admin')"
                 ).fetchall()
