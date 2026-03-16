@@ -46,7 +46,7 @@ ROUTING_MODEL = os.getenv("ROUTING_MODEL", "claude-3-haiku-20240307")
 
 DEFAULT_TOOLS = [
     "Bash", "Read", "Write", "Edit",
-    "send_message", "schedule_task",
+    "send_message", "schedule_task", "run_agent",
     "search_knowledge_base", "start_workflow", "check_workflow_status",
     "route_to_department",
     "create_meeting", "list_meetings", "find_free_slot",

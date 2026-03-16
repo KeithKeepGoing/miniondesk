@@ -1,10 +1,11 @@
 """
-Messaging tools: send_message, schedule_task.
+Messaging tools: send_message, schedule_task, run_agent.
 Uses file-based IPC to communicate with host.
 """
 from __future__ import annotations
 import json
 import os
+import time
 import uuid
 from datetime import datetime
 from . import Tool, ToolContext
@@ -84,6 +85,52 @@ def _cancel_task(args: dict, ctx: "ToolContext") -> str:
         return f"Error: {e}"
 
 
+def _run_agent(args: dict, ctx: ToolContext) -> str:
+    """
+    Spawn a sub-agent in an isolated container to handle a subtask.
+    Blocks until complete (up to 300s) and returns the sub-agent's output.
+    Writes a spawn_agent IPC request and polls the results dir for the response.
+    """
+    prompt = args.get("prompt", "").strip()
+    if not prompt:
+        return "Error: prompt is required."
+
+    request_id = str(uuid.uuid4())
+    ipc_tasks = os.path.join(ctx.ipc_dir, "tasks")
+    ipc_results = os.path.join(ctx.ipc_dir, "results")
+    os.makedirs(ipc_tasks, exist_ok=True)
+    os.makedirs(ipc_results, exist_ok=True)
+
+    spawn_payload = {
+        "type": "spawn_agent",
+        "requestId": request_id,
+        "chat_jid": ctx.chat_jid,
+        "minion_name": ctx.minion_name,
+        "prompt": prompt,
+    }
+    fname = os.path.join(ipc_tasks, f"{int(time.time() * 1000)}-spawn.json")
+    with open(fname, "w", encoding="utf-8") as f:
+        json.dump(spawn_payload, f, ensure_ascii=False)
+
+    # Poll for result (up to 300 seconds)
+    output_path = os.path.join(ipc_results, f"{request_id}.json")
+    for _ in range(300):
+        if os.path.exists(output_path):
+            try:
+                with open(output_path, encoding="utf-8") as f:
+                    data = json.load(f)
+                try:
+                    os.unlink(output_path)
+                except Exception:
+                    pass
+                return data.get("output", "(no output)")
+            except Exception as e:
+                return f"Error reading subagent result: {e}"
+        time.sleep(1)
+
+    return "Error: subagent timed out after 300s"
+
+
 def get_messaging_tools() -> list[Tool]:
     return [
         Tool(
@@ -141,5 +188,27 @@ def get_messaging_tools() -> list[Tool]:
                 "required": ["task_id"],
             },
             execute=_cancel_task,
+        ),
+        Tool(
+            name="run_agent",
+            description=(
+                "Spawn a sub-agent in an isolated container to handle a subtask. "
+                "Blocks until complete (up to 300s) and returns its output. "
+                "Use for Level B (complex) tasks that benefit from isolated execution."
+            ),
+            schema={
+                "type": "object",
+                "properties": {
+                    "prompt": {
+                        "type": "string",
+                        "description": (
+                            "The task for the sub-agent. Must be self-contained and include all context. "
+                            "Start with '/reasoning on' to enable deeper reasoning."
+                        ),
+                    },
+                },
+                "required": ["prompt"],
+            },
+            execute=_run_agent,
         ),
     ]
