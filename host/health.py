@@ -87,17 +87,19 @@ async def handle_metrics(request) -> "web.Response":
 async def start_health_server(port: int = 8080) -> None:
     """Start the health check HTTP server."""
     try:
+        import os as _os
         from aiohttp import web
         app = web.Application()
         app.router.add_get("/health", handle_health)
         app.router.add_get("/metrics", handle_metrics)
         app.router.add_get("/", handle_health)  # Alias
 
+        bind_host = _os.getenv("HEALTH_BIND_HOST", "0.0.0.0")
         runner = web.AppRunner(app)
         await runner.setup()
-        site = web.TCPSite(runner, "0.0.0.0", port)
+        site = web.TCPSite(runner, bind_host, port)
         await site.start()
-        print(f"[health] HTTP server on :{port} (GET /health, GET /metrics)")
+        print(f"[health] HTTP server on {bind_host}:{port} (GET /health, GET /metrics)")
     except ImportError:
         print("[health] aiohttp not installed, health server disabled")
     except Exception as e:
