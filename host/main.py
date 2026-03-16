@@ -173,6 +173,42 @@ async def main() -> None:
             await chan.send_message(chat_jid, text)
 
     async def on_ipc_task(data: dict) -> None:
+        # Handle sub-agent spawn requests (from run_agent tool inside container)
+        if data.get("type") == "spawn_agent":
+            request_id = data.get("requestId", "")
+            prompt = data.get("prompt", "")
+            chat_jid = data.get("chat_jid", "")
+            minion_name = data.get("minion_name", "")
+            if not (request_id and prompt):
+                log.warning("spawn_agent missing requestId or prompt — dropping")
+                return
+            log.info(f"spawn_agent: requestId={request_id[:8]} minion={minion_name}")
+            output = ""
+            try:
+                result = await asyncio.wait_for(
+                    runner.run_container(
+                        chat_jid=chat_jid or "system",
+                        minion_name=minion_name or "assistant",
+                        prompt=prompt,
+                    ),
+                    timeout=290.0,
+                )
+                output = (result or {}).get("response", "") or (result or {}).get("output", "(no response)")
+            except asyncio.TimeoutError:
+                output = "Error: subagent timed out after 290s"
+            except Exception as e:
+                output = f"Error: {type(e).__name__}: {e}"
+            # Write result to IPC results dir so container can pick it up
+            results_dir = config.IPC_DIR / "results"
+            results_dir.mkdir(parents=True, exist_ok=True)
+            result_file = results_dir / f"{request_id}.json"
+            result_file.write_text(
+                __import__("json").dumps({"output": output}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            log.info(f"spawn_agent result written: {request_id[:8]} ({len(output)} chars)")
+            return
+
         # Handle task cancellation requests
         if data.get("action") == "cancel":
             task_id = data.get("task_id", "")

@@ -1,3 +1,15 @@
+# Changelog
+
+All notable changes to MinionDesk will be documented in this file.
+
+## [2.4.14] - 2026-03-16
+### Added
+- `run_agent` tool: new container-side tool that spawns a sub-agent via IPC and returns its output (up to 300s)
+- `host/main.py`: `on_ipc_task` handles `spawn_agent` type — runs `runner.run_container()` and writes result to IPC results dir
+- `host/config.py`: `run_agent` added to DEFAULT_TOOLS
+- Agent soul: `## 任務協調與智慧委派` rules appended to all persona system prompts
+- Pre-flight analysis: Level A/B classification, smart delegation, MEMORY.md archiving, transparency rules (#165)
+
 ## [2.4.13] — 2026-03-16
 
 ### Fixed
