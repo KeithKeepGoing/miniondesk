@@ -46,7 +46,7 @@ async def handle_health(request) -> "web.Response":
         "uptime_seconds": uptime,
         "timestamp": datetime.utcnow().isoformat(),
         "checks": checks,
-        "version": "2.0.0",
+        "version": config.VERSION,
     }
 
     http_status = 200 if status == "ok" else 503

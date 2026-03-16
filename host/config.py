@@ -6,6 +6,16 @@ import os
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent
+
+# Read version from pyproject.toml (single source of truth)
+VERSION = "0.0.0"
+try:
+    import tomllib
+    with open(PROJECT_ROOT / "pyproject.toml", "rb") as _f:
+        VERSION = tomllib.load(_f)["project"]["version"]
+except Exception:
+    pass
+
 DATA_DIR = Path(os.getenv("DATA_DIR", str(PROJECT_ROOT / "data")))
 IPC_DIR = Path(os.getenv("IPC_DIR", str(PROJECT_ROOT / "ipc")))
 MINIONS_DIR = PROJECT_ROOT / "minions"
