@@ -119,6 +119,7 @@ async def main() -> None:
         # Run container (serialized per chat_jid)
         lock = await queue.get_lock(chat_jid)
         async with lock:
+            _run_t0 = __import__("time").time()
             try:
                 result = await asyncio.wait_for(
                     runner.run_container(
@@ -145,6 +146,20 @@ async def main() -> None:
                         append_warm_log(chat_jid, text, reply)
                     except Exception:
                         pass
+            # ── Host Auto-Write Fallback ────────────────────────────────────
+            try:
+                import datetime as _dt
+                _host_memory_path = config.DATA_DIR / "MEMORY.md"
+                _mem_mtime = _host_memory_path.stat().st_mtime if _host_memory_path.exists() else 0.0
+                if _mem_mtime < _run_t0:
+                    _date_str = _dt.datetime.now().strftime("%Y-%m-%d")
+                    _prompt_preview = (text or "")[:80].replace("\n", " ")
+                    _auto_entry = f"\n[{_date_str}] [auto] Task: {_prompt_preview}. Result: success.\n"
+                    with open(_host_memory_path, "a", encoding="utf-8") as _mf:
+                        _mf.write(_auto_entry)
+                    log.info("host auto-wrote MEMORY.md fallback for %s", chat_jid)
+            except Exception as _e:
+                log.warning("host auto-write MEMORY.md failed: %s", _e)
         else:
             error = result.get("error", "Unknown error") if result else "No response"
             log.error(f"Container error [{chat_jid}]: {error}")
