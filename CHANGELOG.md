@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.4.15] - 2026-03-16
+### Added
+- MEMORY.md 啟動注入：session 啟動時讀取 {data_dir}/MEMORY.md，注入為「長期記憶」section — 讓知識歸檔真正有效 (#167)
+- 里程碑強制器：runner loop 追蹤 _turns_since_notify，超過 4 輪無 send_message 自動注入提醒 (#167)
+- Level B 啟發式偵測：prompt 長度 > 200 或含關鍵字時代碼層面標記 Level B，輔助模型委派決策 (#167)
+
 All notable changes to MinionDesk will be documented in this file.
 
 ## [2.4.14] - 2026-03-16
