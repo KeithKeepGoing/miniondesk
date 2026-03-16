@@ -4,10 +4,12 @@ MinionDesk SQLite Database Layer
 from __future__ import annotations
 import json
 import sqlite3
+import threading
 from datetime import datetime
 from pathlib import Path
 
 _conn: sqlite3.Connection | None = None
+_lock = threading.Lock()  # Protects _conn when accessed from multiple threads
 
 
 def init(db_path: Path) -> None:
@@ -15,6 +17,7 @@ def init(db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     _conn = sqlite3.connect(str(db_path), check_same_thread=False)
     _conn.execute("PRAGMA journal_mode=WAL")
+    _conn.execute("PRAGMA busy_timeout=5000")  # Wait up to 5s on lock contention
     _conn.execute("PRAGMA foreign_keys=ON")
     _create_tables()
 
@@ -341,6 +344,16 @@ def get_pending_notifications() -> list[tuple]:
 def mark_notification_sent(notif_id: int) -> None:
     _conn.execute("UPDATE pending_notifications SET sent = 1 WHERE id = ?", (notif_id,))
     _conn.commit()
+
+
+def purge_old_notifications(days: int = 7) -> int:
+    """Delete sent notifications older than `days` days. Returns rows deleted."""
+    cur = _conn.execute(
+        "DELETE FROM pending_notifications WHERE sent = 1 AND created_at < datetime('now', ?)",
+        (f"-{days} days",),
+    )
+    _conn.commit()
+    return cur.rowcount
 
 
 def queue_notification(target_jid: str, message: str) -> None:

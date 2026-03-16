@@ -282,7 +282,9 @@ async def main() -> None:
             log.error("Scheduled task failed for %s: %s", chat_jid, error)
 
     # Notification loop
+    _purge_counter = 0
     async def notification_loop() -> None:
+        nonlocal _purge_counter
         while True:
             await asyncio.sleep(30)
             notifs = db.get_pending_notifications()
@@ -298,6 +300,16 @@ async def main() -> None:
                         log.warning(f"Cannot notify {target_jid}: channel not available")
                 except Exception as e:
                     log.error(f"notification delivery error: {type(e).__name__}: {e}")
+            # Purge old sent notifications once per hour (every 120 iterations × 30s)
+            _purge_counter += 1
+            if _purge_counter >= 120:
+                _purge_counter = 0
+                try:
+                    n = db.purge_old_notifications()
+                    if n:
+                        log.info("Purged %d old sent notifications", n)
+                except Exception:
+                    pass
 
     async def _expiry_loop() -> None:
         """Check workflow expiry and send reminders daily."""
