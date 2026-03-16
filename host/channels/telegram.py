@@ -113,30 +113,9 @@ class TelegramChannel:
             sender_jid = user_id
             text = update.message.text
 
-            # Rate limiting
-            try:
-                from .. import ratelimit
-                allowed, reason = await ratelimit.check(user_id)
-                if not allowed:
-                    await update.message.reply_text(reason)
-                    return
-            except Exception:
-                pass
-
-            # Immune scan
-            try:
-                from .. import immune
-                threat = immune.scan(text)
-                if threat.blocked:
-                    await update.message.reply_text(f"🛡️ {threat.reason}")
-                    try:
-                        from .. import db as _db
-                        _db.audit(user_id, "threat_blocked", chat_jid, threat.pattern)
-                    except Exception:
-                        pass
-                    return
-            except Exception:
-                pass
+            # Rate-limit and immune checks are handled centrally in
+            # main.py on_message() — do NOT duplicate them here (fixes #187:
+            # double rate-limit consumed 2 slots per Telegram message).
 
             # Auto-route to the best minion for this message
             try:

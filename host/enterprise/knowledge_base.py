@@ -283,9 +283,15 @@ def semantic_search(query: str, ctx=None, limit: int = 5) -> list[dict]:
     if query_embedding:
         try:
             conn = db.get_conn()
+            # Check total count and warn if exceeding scan limit (fixes #191)
+            total = conn.execute("SELECT COUNT(*) FROM kb_chunks_plain WHERE embedding_json IS NOT NULL").fetchone()[0]
+            _SCAN_LIMIT = 1000
+            if total > _SCAN_LIMIT:
+                log.warning("semantic_search: %d chunks exceed scan limit %d — results may be incomplete", total, _SCAN_LIMIT)
             # Get chunks that have stored embeddings
             rows = conn.execute(
-                "SELECT title, content, source, embedding_json FROM kb_chunks_plain LIMIT 500"
+                "SELECT title, content, source, embedding_json FROM kb_chunks_plain WHERE embedding_json IS NOT NULL LIMIT ?",
+                (_SCAN_LIMIT,)
             ).fetchall()
 
             scored = []

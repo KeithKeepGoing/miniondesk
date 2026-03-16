@@ -3,23 +3,33 @@ MinionQueue: Ensures at most one container per chat_jid runs at a time.
 """
 from __future__ import annotations
 import asyncio
-from collections import defaultdict
+from collections import OrderedDict
 
-_locks: dict[str, asyncio.Lock] = {}
-_lock_order: list[str] = []
+_locks: OrderedDict[str, asyncio.Lock] = OrderedDict()
 
 MAX_LOCK_ENTRIES = 1000
 
 
 def _evict_locks() -> None:
+    """Evict oldest unlocked locks when capacity is reached."""
     while len(_locks) >= MAX_LOCK_ENTRIES:
-        oldest = _lock_order.pop(0)
-        _locks.pop(oldest, None)
+        # Find the oldest unlocked lock to evict
+        evicted = False
+        for jid in list(_locks):
+            if not _locks[jid].locked():
+                del _locks[jid]
+                evicted = True
+                break
+        if not evicted:
+            # All locks are held — cannot evict safely; allow over-capacity
+            break
 
 
 async def get_lock(chat_jid: str) -> asyncio.Lock:
-    if chat_jid not in _locks:
+    if chat_jid in _locks:
+        # Move to end (LRU: most recently used last)
+        _locks.move_to_end(chat_jid)
+    else:
         _evict_locks()
         _locks[chat_jid] = asyncio.Lock()
-        _lock_order.append(chat_jid)
     return _locks[chat_jid]

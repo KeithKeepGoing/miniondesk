@@ -64,7 +64,15 @@ async def get_usage(jid: str) -> dict:
     """Return rate limit usage for a JID."""
     async with _lock:
         now = time.monotonic()
-        window = _windows[jid]
+        # Use .get() to avoid creating phantom entries via defaultdict (fixes #189)
+        window = _windows.get(jid)
+        if window is None:
+            return {
+                "used": 0,
+                "limit": _config.max_requests,
+                "window_seconds": _config.window_seconds,
+                "remaining": _config.max_requests,
+            }
         valid = [ts for ts in window if (now - ts) <= _config.window_seconds]
         return {
             "used": len(valid),
