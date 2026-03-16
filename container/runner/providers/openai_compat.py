@@ -35,6 +35,7 @@ class OpenAICompatProvider(BaseProvider):
         messages: list[Message],
         tools: list[dict],
         system: str = "",
+        force_tool: bool = False,  # True = tool_choice="required" (Fix #163)
     ) -> Response:
         # Convert messages
         oai_messages = []
@@ -85,9 +86,19 @@ class OpenAICompatProvider(BaseProvider):
         )
         if oai_tools:
             kwargs["tools"] = oai_tools
-            kwargs["tool_choice"] = "auto"
+            # Use "required" when caller signals the model has been avoiding tools (Fix #163).
+            # This enforces tool use at the API level — model cannot return text-only.
+            kwargs["tool_choice"] = "required" if force_tool else "auto"
 
-        response = await self._client.chat.completions.create(**kwargs)
+        try:
+            response = await self._client.chat.completions.create(**kwargs)
+        except Exception as _e:
+            if force_tool and "tool_choice" in str(_e).lower():
+                # Provider doesn't support tool_choice="required" — fall back to "auto"
+                kwargs["tool_choice"] = "auto"
+                response = await self._client.chat.completions.create(**kwargs)
+            else:
+                raise
         choice = response.choices[0]
         msg_out = choice.message
 

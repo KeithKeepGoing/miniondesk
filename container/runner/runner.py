@@ -150,10 +150,14 @@ async def run(inp: dict) -> dict:
     schemas = registry.schemas()
 
     final_response = None
+    _no_tool_turns = 0  # consecutive turns without any tool call (Fix #163)
     for turn in range(MAX_TURNS):
+        _force = _no_tool_turns > 0  # escalate to tool_choice="required" (Fix #163)
+        if _force:
+            _slog("⚠️ FORCE-TOOL", f"no_tool_turns={_no_tool_turns} — escalating to tool_choice='required'")
         try:
-            _slog("🧠 LLM →", f"turn={turn}")
-            resp = await provider.complete(history, schemas, system)
+            _slog("🧠 LLM →", f"turn={turn} force_tool={_force}")
+            resp = await provider.complete(history, schemas, system, force_tool=_force)
             _slog("🧠 LLM ←", f"stop={getattr(resp, 'stop_reason', 'done')}")
         except Exception as e:
             tb = traceback.format_exc()
@@ -164,6 +168,14 @@ async def run(inp: dict) -> dict:
             }
 
         if resp.finish_reason == "stop" or not resp.tool_calls:
+            _no_tool_turns += 1  # track consecutive no-tool turns (Fix #163)
+
+            # Hard cap: 3 consecutive turns without tool calls → give up (Fix #163)
+            if _no_tool_turns >= 3:
+                _slog("❌ NO-TOOL", f"Model made no tool call for {_no_tool_turns} consecutive turns — breaking")
+                final_response = resp.content or ""
+                break
+
             # ── Fallback: detect bash code blocks the model forgot to run ─────
             # Some models output ```bash blocks as text instead of calling the
             # Bash tool. Auto-execute them and feed results back.
@@ -172,6 +184,7 @@ async def run(inp: dict) -> dict:
             _code_blocks = _re_cb.findall(r'```(?:bash|sh|shell)?\n([\s\S]*?)```', _content)
             _runnable = [b.strip() for b in _code_blocks if b.strip()]
             if _runnable and turn < MAX_TURNS - 1:
+                _no_tool_turns = 0  # code blocks count as attempted tool use
                 _slog("⚠️ AUTO-EXEC", f"model output {len(_runnable)} code block(s) as text — auto-executing")
                 _exec_outputs = []
                 for _cmd in _runnable:
@@ -193,19 +206,16 @@ async def run(inp: dict) -> dict:
                 continue
 
             # ── Fallback 2: detect fake status lines *(正在...)* etc. ──────────
-            # Some models write *(正在執行...)* / *(running...)* as pure text instead
-            # of calling tools. Re-prompt them to actually use tools. (Fix #161)
+            # Log detection; real enforcement is tool_choice="required" next turn (Fix #161+#163)
             _FAKE_STATUS_RE = _re_cb.compile(r'\*\([^)]*\)\*|\*\[[^\]]*\]\*', _re_cb.DOTALL)
             _fake_hits = _FAKE_STATUS_RE.findall(_content)
             if _fake_hits and turn < MAX_TURNS - 1:
-                _slog("⚠️ FAKE-STATUS", f"model wrote {len(_fake_hits)} fake status line(s) — re-prompting")
+                _slog("⚠️ FAKE-STATUS", f"model wrote {len(_fake_hits)} fake status line(s) — tool_choice='required' on next turn")
                 history.append(Message(
                     role="user",
                     content=(
-                        "【系統警告】你剛才的回覆包含假狀態行（例如 *(正在執行...)* ），"
-                        "這些純文字根本沒有執行任何命令。\n"
-                        "請停止用文字描述或模擬動作，立即直接呼叫 Bash tool（或其他工具）實際執行所需命令。\n"
-                        "記住：只有呼叫工具才能執行任何操作，文字描述對系統沒有任何作用。"
+                        "【系統警告】你剛才的回覆包含假狀態行（例如 *(正在執行...)* ），沒有呼叫任何工具。"
+                        "下一輪系統將強制要求你必須呼叫工具，請立刻使用 Bash tool 或其他工具執行所需命令。"
                     ),
                 ))
                 continue
@@ -215,6 +225,9 @@ async def run(inp: dict) -> dict:
             _slog("📤 REPLY", str(final_response)[:600] if final_response is not None else '')
             _slog("🏁 DONE", "success=True")
             return {"status": "ok", "result": resp.content}
+
+        # Model made tool calls — reset the no-tool counter (Fix #163)
+        _no_tool_turns = 0
 
         # Append assistant message with tool calls
         history.append(Message(
