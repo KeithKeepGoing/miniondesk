@@ -1,3 +1,38 @@
+# v2.4.19 — Reliability + Security Fixes
+
+**Released**: 2026-03-17
+
+Architecture review identified and fixed 8 issues across reliability, security, and performance.
+
+## Fixed
+
+### Rate Limiter Skip Bug
+- `host/ratelimit.py`: First request after cooldown window was silently skipped — the timestamp was never recorded. Now correctly falls through to append the request.
+
+### Hardcoded Timeouts
+- `host/main.py`: `spawn_agent` used hardcoded 290s, `run_scheduled_task` used 300s. Both now use `config.CONTAINER_TIMEOUT` for consistency.
+
+### Stale Version in Health Endpoint
+- `host/health.py`: Reported hardcoded "2.0.0". Now reads `config.VERSION` which is parsed from `pyproject.toml`.
+
+### Sequential Scheduler
+- `host/scheduler.py`: Due tasks were `await`ed one at a time — one slow task blocked all others. Now collects due tasks first, then fires them concurrently via `asyncio.gather`.
+
+### IPC Results Unbounded Growth
+- `host/main.py`: `spawn_agent` writes result files to `ipc/results/` but nothing cleaned them up. Now purges files older than 10 minutes after each write.
+
+### Health Server Bind Address
+- `host/health.py`: Bind address configurable via `HEALTH_BIND_HOST` env var (default: `0.0.0.0`).
+
+### Notification Table Growth
+- `host/db.py`: Added `purge_old_notifications()` to delete sent notifications older than 7 days.
+- `host/main.py`: Calls purge hourly from the notification loop.
+
+### SQLite Thread Safety
+- `host/db.py`: Added `PRAGMA busy_timeout=5000` and `threading.Lock` to handle contention from async worker threads.
+
+---
+
 # v2.4.5 — Container 啟動時自動執行 gh auth login
 
 **Released**: 2026-03-13

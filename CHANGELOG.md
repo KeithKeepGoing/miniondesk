@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.4.19] - 2026-03-17
+### Fixed
+- Rate limiter: first request after cooldown window was silently skipped (not counted)
+- Hardcoded timeouts: spawn_agent (290s) and scheduled tasks (300s) now use `config.CONTAINER_TIMEOUT`
+- Health endpoint reported hardcoded version "2.0.0" — now reads from `pyproject.toml` via `config.VERSION`
+- Scheduler ran due tasks sequentially (one slow task blocked all others) — now fires concurrently via `asyncio.gather`
+- IPC results directory grew unboundedly — stale files older than 10 minutes are now purged
+- Health server bind address now configurable via `HEALTH_BIND_HOST` env var
+- Sent notifications were never purged from DB — added `purge_old_notifications()` called hourly
+- SQLite `PRAGMA busy_timeout=5000` added to handle lock contention in multi-thread async usage
+
 ## [2.4.18] - 2026-03-16
 ### Added
 - 意志系統：MEMORY.md 智慧注入（身份永遠保留 + task log 後 3000 字元）

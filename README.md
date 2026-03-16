@@ -6,16 +6,11 @@
 
 | 版本 | 摘要 |
 |------|------|
-| **v2.4.10** | `python-dotenv` 列為必要依賴 + `run.py` 未安裝時改為明確警告，修復 `.env` 靜默不載入問題 |
-| **v2.4.9** | runner.py bash code block auto-exec fallback + CRITICAL 工具警告 — 對齊 EvoClaw v1.11.14 |
-| **v2.4.8** | `.env.example` 更新 `GITHUB_TOKEN` 說明，標示必要，讓用戶知道需填入 token |
-| **v2.4.7** | Dockerfile 安裝 gh CLI + `_ALLOWED_SECRET_KEYS` 加入 GITHUB_TOKEN + `gh auth setup-git` + git identity |
-| **v2.4.6** | `get_secrets()` 加入 `GITHUB_TOKEN` / `GH_TOKEN`，修復 container 永遠無法 gh auth 的根本原因 |
-| **v2.4.5** | Container 啟動時自動執行 gh auth login（GITHUB_TOKEN 自動認證 gh CLI） |
-| **v2.4.4** | Container Tool Log 截斷上限提升至 1500 字（🔧 TOOL args + 🔧 RESULT 完整記錄） |
-| **v2.4.3** | Container Runner logging 修復 + System Prompt 記錄（logging.basicConfig + _slog） |
-| **v2.4.2** | Container Logs Modal undefined 修復 + stderr 儲存限制 8KB → 32KB |
-| **v2.4.1** | Container Logs Dashboard 全文 Stderr 展開查看器（📋 展開按鈕 + Modal） |
+| **v2.4.19** | Reliability + security fixes: rate limiter skip bug, hardcoded timeouts, sequential scheduler, IPC cleanup, notification purge, SQLite busy_timeout |
+| **v2.4.18** | Agent will — persistent identity, MEMORY.md enforcer v3, host auto-write fallback |
+| **v2.4.17** | Refactor: extract soul rules to soul.md |
+| **v2.4.16** | Milestone enforcer v2 — anti-fabrication detection |
+| **v2.4.15** | Soul enforcement — MEMORY.md injection, milestone enforcer, Level B heuristic |
 
 ---
 
