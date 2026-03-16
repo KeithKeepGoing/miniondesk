@@ -149,6 +149,46 @@ async def run(inp: dict) -> dict:
         "3. 里程碑回報: If estimated total time > 2 minutes, send send_message at each major milestone — never go silent for more than 2 minutes.\n"
     )
 
+    # ── MEMORY.md 啟動注入（長期記憶）──────────────────────────────────────────
+    # 每次 session 啟動時讀取 MEMORY.md，注入為「長期記憶」section。
+    # 這讓靈魂規則中的「知識歸檔」真正有效：寫進去的記憶下次會被讀回來。
+    import os as _os
+    _memory_path = _os.path.join(_data_dir, "MEMORY.md")
+    if _os.path.exists(_memory_path):
+        try:
+            with open(_memory_path, encoding="utf-8") as _mf:
+                _memory_content = _mf.read().strip()
+            if _memory_content:
+                _memory_snippet = _memory_content[-4000:]  # 最多注入最近 4000 字元
+                system += (
+                    f"\n\n## 長期記憶 (MEMORY.md)\n"
+                    f"以下是你在先前 session 中記錄的重要決策與技術解決方案：\n\n{_memory_snippet}"
+                )
+                _slog("🧠 MEMORY", f"Injected {len(_memory_snippet)} chars from MEMORY.md")
+        except Exception as _mem_err:
+            _slog("⚠️ MEMORY", f"Failed to read MEMORY.md: {_mem_err}")
+
+    # ── Level B 啟發式偵測（代碼層面輔助分類）────────────────────────────────
+    # 根據 prompt 長度 + 關鍵字分析，代碼層面判斷是否為 Level B 任務。
+    _LEVEL_B_KEYWORDS = [
+        "debug", "修復", "fix", "配置", "configure", "install", "安裝",
+        "optimize", "優化", "implement", "實作", "refactor", "重構",
+        "analyze", "分析", "deploy", "部署", "multi-step", "step by step",
+        "system", "系統", "migrate", "migration", "architecture", "架構",
+    ]
+    _prompt_text = inp.get("prompt", "")
+    _prompt_lower = _prompt_text.lower()
+    _is_level_b = (
+        len(_prompt_text) > 200 or
+        any(kw in _prompt_lower for kw in _LEVEL_B_KEYWORDS)
+    )
+    if _is_level_b:
+        system += (
+            "\n\n⚠️ 系統預分析：本任務可能屬於 Level B（複雜任務）。"
+            "請在開始前評估是否需要使用 run_agent 委派給子代理。"
+        )
+        _slog("🧠 LEVEL-B", f"Heuristic detected Level B (len={len(_prompt_text)}, match={_is_level_b})")
+
     # Prepend conversation history to system prompt
     conv_history = inp.get("conversationHistory", "")
     if conv_history:
@@ -180,6 +220,7 @@ async def run(inp: dict) -> dict:
 
     final_response = None
     _no_tool_turns = 0  # consecutive turns without any tool call (Fix #163)
+    _turns_since_notify = 0  # turns since last send_message call (milestone enforcer)
     for turn in range(MAX_TURNS):
         _force = _no_tool_turns > 0  # escalate to tool_choice="required" (Fix #163)
         if _force:
@@ -257,6 +298,25 @@ async def run(inp: dict) -> dict:
 
         # Model made tool calls — reset the no-tool counter (Fix #163)
         _no_tool_turns = 0
+
+        # ── 里程碑強制器：追蹤距上次 send_message 的輪數 ────────────────────
+        # 若超過 4 輪沒有向用戶發送進度更新，自動注入里程碑提醒。
+        # 這是代碼層面的強制，不依賴模型自律。
+        _sent_message_this_turn = any(tc.name == "send_message" for tc in resp.tool_calls)
+        if _sent_message_this_turn:
+            _turns_since_notify = 0
+        else:
+            _turns_since_notify += 1
+            if _turns_since_notify >= 4 and turn < MAX_TURNS - 2:
+                _slog("⏰ MILESTONE", f"No send_message for {_turns_since_notify} turns — injecting reminder")
+                history.append(Message(
+                    role="user",
+                    content=(
+                        f"⏰ 你已執行 {_turns_since_notify} 輪未向用戶回報進度。"
+                        "請立即使用 send_message 發送里程碑更新，告知目前執行狀態（2-3 句話即可）。"
+                    ),
+                ))
+                _turns_since_notify = 0
 
         # Append assistant message with tool calls
         history.append(Message(
