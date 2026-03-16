@@ -6,6 +6,7 @@
 
 | 版本 | 摘要 |
 |------|------|
+| **v2.4.20** | Deep audit round 2: lock eviction race fix, IPC dead-letter quarantine, workflow auth check, Telegram double rate-limit fix, reminder dedup, KB search improvement |
 | **v2.4.19** | Reliability + security fixes: rate limiter skip bug, hardcoded timeouts, sequential scheduler, IPC cleanup, notification purge, SQLite busy_timeout |
 | **v2.4.18** | Agent will — persistent identity, MEMORY.md enforcer v3, host auto-write fallback |
 | **v2.4.17** | Refactor: extract soul rules to soul.md |

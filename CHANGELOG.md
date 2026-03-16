@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.4.20] - 2026-03-17
+### Fixed
+- queue.py: lock eviction could destroy actively-held locks, breaking container serialization — now uses LRU OrderedDict and skips locked entries (#185)
+- ipc.py: failed IPC files retried infinitely (0.5s loop) — now quarantined to dead_letter dir after 5 failures (#186)
+- telegram.py: double rate-limit and immune scan consumed 2 rate-limit slots per message — removed duplicate checks from channel handler (#187)
+- workflow.py: approve/reject had no authorization check — any user could approve their own requests — added manager/admin role verification (#188)
+- ratelimit.py: get_usage() created phantom entries via defaultdict — now uses .get() to avoid memory leak (#189)
+- workflow.py: reminder notifications sent every hour (24x/day) for pending workflows — deduplicated to once per 24 hours (#190)
+- knowledge_base.py: semantic_search hardcoded LIMIT 500, silently dropping newer chunks — raised to 1000 with warning log (#191)
+
 ## [2.4.19] - 2026-03-17
 ### Fixed
 - Rate limiter: first request after cooldown window was silently skipped (not counted)
