@@ -109,8 +109,8 @@ async def run_container(
     _started_at = time.time()
     try:
         db.log_container_start(_run_id, chat_jid, minion_name, _started_at)
-    except Exception:
-        pass
+    except Exception as e:
+        _log.warning("Failed to log container start: %s", e)
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -140,8 +140,8 @@ async def run_container(
         if isinstance(result, dict) and result.get("memory_patch"):
             try:
                 update_hot_memory(chat_jid, result["memory_patch"])
-            except Exception:
-                pass
+            except Exception as e:
+                _log.warning("Failed to update hot memory for %s: %s", chat_jid, e)
         return result
 
     except asyncio.TimeoutError:
