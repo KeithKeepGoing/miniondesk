@@ -90,9 +90,11 @@ async def run_scheduler(on_task: Callable) -> None:
         await asyncio.sleep(60)
         now = datetime.now(timezone.utc)
         tasks = db.get_scheduled_tasks()
+        # Collect due tasks first, then run them concurrently so one slow
+        # task doesn't block others from firing on time.
+        due_tasks: list[dict] = []
         for task in tasks:
             try:
-                # Skip tasks that are not active (cancelled, error, etc.)
                 if task.get("status") not in (None, "active"):
                     continue
 
@@ -104,15 +106,12 @@ async def run_scheduler(on_task: Callable) -> None:
                     _log.warning("Scheduler: task %s missing schedule_type or schedule_value — skipping", task_id)
                     continue
 
+                is_due = False
                 if stype == "cron":
-                    if _cron_matches(sval, now):
-                        await _run_task_with_logging(on_task, task)
-                        db.update_task_last_run(task_id)
+                    is_due = _cron_matches(sval, now)
                 elif stype == "once":
                     run_at = datetime.fromisoformat(sval.replace("Z", "+00:00"))
-                    if now >= run_at and not task.get("last_run"):
-                        await _run_task_with_logging(on_task, task)
-                        db.update_task_last_run(task_id)
+                    is_due = now >= run_at and not task.get("last_run")
                 elif stype == "interval":
                     interval_ms = int(sval)
                     if interval_ms < 1000:
@@ -120,15 +119,26 @@ async def run_scheduler(on_task: Callable) -> None:
                         continue
                     last = task.get("last_run")
                     if not last:
-                        await _run_task_with_logging(on_task, task)
-                        db.update_task_last_run(task_id)
+                        is_due = True
                     else:
                         last_dt = datetime.fromisoformat(last)
                         if last_dt.tzinfo is None:
                             last_dt = last_dt.replace(tzinfo=timezone.utc)
                         elapsed_ms = (now - last_dt).total_seconds() * 1000
-                        if elapsed_ms >= interval_ms:
-                            await _run_task_with_logging(on_task, task)
-                            db.update_task_last_run(task_id)
+                        is_due = elapsed_ms >= interval_ms
+
+                if is_due:
+                    due_tasks.append(task)
             except Exception as e:
-                _log.error(f"Error with task {task.get('id', '<unknown>')}: {e}")
+                _log.error(f"Error evaluating task {task.get('id', '<unknown>')}: {e}")
+
+        # Fire all due tasks concurrently
+        if due_tasks:
+            async def _run_and_mark(t: dict) -> None:
+                try:
+                    await _run_task_with_logging(on_task, t)
+                    db.update_task_last_run(t.get("id", ""))
+                except Exception as e:
+                    _log.error(f"Error running task {t.get('id', '<unknown>')}: {e}")
+
+            await asyncio.gather(*[_run_and_mark(t) for t in due_tasks], return_exceptions=True)

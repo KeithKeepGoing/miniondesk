@@ -46,7 +46,10 @@ async def check(jid: str) -> tuple[bool, str]:
         # Clean up empty entries to prevent unbounded memory growth (fixes #180)
         if not window:
             del _windows[jid]
-            return True, ""
+            # Fall through to record this request below (fixes #184: first
+            # request after cooldown was silently skipped)
+
+        window = _windows[jid]  # re-fetch after possible deletion
 
         if len(window) >= _config.max_requests:
             oldest = window[0]

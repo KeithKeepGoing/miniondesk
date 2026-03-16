@@ -227,11 +227,11 @@ async def main() -> None:
                         minion_name=minion_name or "assistant",
                         prompt=prompt,
                     ),
-                    timeout=290.0,
+                    timeout=config.CONTAINER_TIMEOUT,
                 )
                 output = (result or {}).get("response", "") or (result or {}).get("output", "(no response)")
             except asyncio.TimeoutError:
-                output = "Error: subagent timed out after 290s"
+                output = f"Error: subagent timed out after {config.CONTAINER_TIMEOUT}s"
             except Exception as e:
                 output = f"Error: {type(e).__name__}: {e}"
             # Write result to IPC results dir so container can pick it up
@@ -243,6 +243,14 @@ async def main() -> None:
                 encoding="utf-8",
             )
             log.info(f"spawn_agent result written: {request_id[:8]} ({len(output)} chars)")
+            # Purge stale result files older than 10 minutes to prevent unbounded growth
+            try:
+                _now = __import__("time").time()
+                for _old in results_dir.iterdir():
+                    if _old.is_file() and (_now - _old.stat().st_mtime) > 600:
+                        _old.unlink(missing_ok=True)
+            except Exception:
+                pass
             return
 
         # Handle task cancellation requests
@@ -272,7 +280,7 @@ async def main() -> None:
                     minion_name=minion_name,
                     prompt=prompt,
                 ),
-                timeout=300.0,
+                timeout=config.CONTAINER_TIMEOUT,
             )
         except asyncio.TimeoutError:
             log.error("Scheduled task timed out for %s", chat_jid)
