@@ -1,3 +1,9 @@
+## [2.4.12] — 2026-03-16
+
+### Fixed
+- `container/runner/runner.py`: CRITICAL 系統提示加入第二條禁令 — 明確禁止 `*(正在執行...)*` 等假狀態行 (Fix #161)
+- `container/runner/runner.py`: 新增 Fallback 2 — 偵測 `*(...)* ` 假狀態模式，自動 re-prompt 模型「請停止假裝，立刻呼叫 Bash tool」(Fix #161)
+
 ## [2.4.11] — 2026-03-14
 
 ### Fixed

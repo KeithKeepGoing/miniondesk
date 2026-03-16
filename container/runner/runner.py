@@ -114,6 +114,8 @@ async def run(inp: dict) -> dict:
     system += (
         "\n\n## CRITICAL: Tool Usage Rules\n"
         "NEVER write bash/shell code blocks (```bash ... ```) in your response. This does NOTHING — the code will not be executed.\n"
+        "NEVER write fake status lines like *(正在執行...)*, *(running...)*, *(executing...)*, [正在處理...] etc. — these are pure text and DO NOTHING.\n"
+        "NEVER narrate or describe what you plan to do. Just DO it immediately by calling the appropriate tool.\n"
         "ALWAYS call the Bash tool directly to run any shell command. Every command you want to run MUST be a Bash tool call.\n"
         "If you need to run multiple commands, make multiple Bash tool calls. Do not describe what you would do — DO IT."
     )
@@ -189,7 +191,26 @@ async def run(inp: dict) -> dict:
                     content=f"[系統自動執行了 {len(_runnable)} 個指令]\n{_combined}\n\n請根據以上輸出，繼續任務並回報最終結果。",
                 ))
                 continue
-            # No code blocks — model is genuinely done
+
+            # ── Fallback 2: detect fake status lines *(正在...)* etc. ──────────
+            # Some models write *(正在執行...)* / *(running...)* as pure text instead
+            # of calling tools. Re-prompt them to actually use tools. (Fix #161)
+            _FAKE_STATUS_RE = _re_cb.compile(r'\*\([^)]*\)\*|\*\[[^\]]*\]\*', _re_cb.DOTALL)
+            _fake_hits = _FAKE_STATUS_RE.findall(_content)
+            if _fake_hits and turn < MAX_TURNS - 1:
+                _slog("⚠️ FAKE-STATUS", f"model wrote {len(_fake_hits)} fake status line(s) — re-prompting")
+                history.append(Message(
+                    role="user",
+                    content=(
+                        "【系統警告】你剛才的回覆包含假狀態行（例如 *(正在執行...)* ），"
+                        "這些純文字根本沒有執行任何命令。\n"
+                        "請停止用文字描述或模擬動作，立即直接呼叫 Bash tool（或其他工具）實際執行所需命令。\n"
+                        "記住：只有呼叫工具才能執行任何操作，文字描述對系統沒有任何作用。"
+                    ),
+                ))
+                continue
+
+            # No code blocks, no fake status — model is genuinely done
             final_response = _content
             _slog("📤 REPLY", str(final_response)[:600] if final_response is not None else '')
             _slog("🏁 DONE", "success=True")
