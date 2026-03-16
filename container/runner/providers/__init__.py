@@ -38,5 +38,6 @@ class BaseProvider:
         messages: list[Message],
         tools: list[dict],
         system: str = "",
+        force_tool: bool = False,  # True = tool_choice="required" (Fix #163)
     ) -> Response:
         raise NotImplementedError

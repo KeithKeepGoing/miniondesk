@@ -1,3 +1,12 @@
+## [2.4.13] — 2026-03-16
+
+### Fixed
+- `container/runner/providers/__init__.py`: `BaseProvider.complete()` 加入 `force_tool: bool = False` 參數 (Fix #163)
+- `container/runner/providers/openai_compat.py`: `force_tool=True` 時使用 `tool_choice="required"` — API 層面強制；不支援時自動降級 (Fix #163)
+- `container/runner/runner.py`: 追蹤 `_no_tool_turns` 計數器，>0 時傳入 `force_tool=True` (Fix #163)
+- `container/runner/runner.py`: 連續 3 次無 tool call → break loop，防止無限循環 (Fix #163)
+- `container/runner/runner.py`: fake-status 偵測保留作為日誌，主要強制機制改為 `force_tool` (Fix #161+#163)
+
 ## [2.4.12] — 2026-03-16
 
 ### Fixed
