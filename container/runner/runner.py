@@ -117,7 +117,9 @@ async def run(inp: dict) -> dict:
         "NEVER write fake status lines like *(正在執行...)*, *(running...)*, *(executing...)*, [正在處理...] etc. — these are pure text and DO NOTHING.\n"
         "NEVER narrate or describe what you plan to do. Just DO it immediately by calling the appropriate tool.\n"
         "ALWAYS call the Bash tool directly to run any shell command. Every command you want to run MUST be a Bash tool call.\n"
-        "If you need to run multiple commands, make multiple Bash tool calls. Do not describe what you would do — DO IT."
+        "If you need to run multiple commands, make multiple Bash tool calls. Do not describe what you would do — DO IT.\n"
+        "NEVER send a fake progress report via send_message unless you have ACTUALLY run tools (Bash/Read/Write/etc.) in that same turn. Fabricating progress ('I am processing...', '3 minutes remaining...') is strictly forbidden.\n"
+        "If you are stuck or do not know how to proceed, call run_agent to delegate the task to a subagent instead of faking progress."
     )
 
     # ── 任務協調與智慧委派（靈魂規則）─────────────────────────────────────────
@@ -221,6 +223,12 @@ async def run(inp: dict) -> dict:
     final_response = None
     _no_tool_turns = 0  # consecutive turns without any tool call (Fix #163)
     _turns_since_notify = 0  # turns since last send_message call (milestone enforcer)
+    _only_notify_turns = 0   # consecutive turns with ONLY send_message (no substantive tools)
+    # Tools that represent actual work (not just reporting)
+    _SUBSTANTIVE_TOOLS = frozenset([
+        "Bash", "Read", "Write", "Edit", "Glob", "Grep", "WebFetch",
+        "run_agent",
+    ])
     for turn in range(MAX_TURNS):
         _force = _no_tool_turns > 0  # escalate to tool_choice="required" (Fix #163)
         if _force:
@@ -299,21 +307,45 @@ async def run(inp: dict) -> dict:
         # Model made tool calls — reset the no-tool counter (Fix #163)
         _no_tool_turns = 0
 
-        # ── 里程碑強制器：追蹤距上次 send_message 的輪數 ────────────────────
-        # 若超過 4 輪沒有向用戶發送進度更新，自動注入里程碑提醒。
-        # 這是代碼層面的強制，不依賴模型自律。
-        _sent_message_this_turn = any(tc.name == "send_message" for tc in resp.tool_calls)
-        if _sent_message_this_turn:
+        # ── 里程碑強制器 v2：區分「假報告」和「真工作」────────────────────────
+        # 問題：舊版允許模型只呼叫 send_message 來通過里程碑檢查，
+        # 導致模型用假進度報告冒充在工作。
+        # 修正：只有「實質工具 + send_message」組合才算真里程碑。
+        #       連續多輪「只有 send_message」→ 強硬警告：停止假報告。
+        _tool_names_this_turn = {tc.name for tc in resp.tool_calls}
+        _sent_message_this_turn = "send_message" in _tool_names_this_turn
+        _did_real_work = bool(_tool_names_this_turn & _SUBSTANTIVE_TOOLS)
+
+        if _sent_message_this_turn and _did_real_work:
+            # Genuine progress report: real work + notification
             _turns_since_notify = 0
+            _only_notify_turns = 0
+        elif _sent_message_this_turn and not _did_real_work:
+            # Only send_message, no actual work — track fabrication pattern
+            _only_notify_turns += 1
+            _slog("⚠️ FAKE-PROGRESS", f"Model called only send_message (no real work) — streak={_only_notify_turns}")
+            if _only_notify_turns >= 2 and turn < MAX_TURNS - 2:
+                _slog("🚨 FAKE-PROGRESS", f"Injecting anti-fabrication warning after {_only_notify_turns} fake-report turns")
+                history.append(Message(
+                    role="user",
+                    content=(
+                        "【系統警告】你已連續多輪只呼叫 send_message，沒有呼叫任何實質工具（Bash、Read、Write、run_agent 等）。"
+                        "這代表你在發送虛構的進度報告而不是真正執行任務。"
+                        "立刻停止假報告。你的下一步必須是：呼叫 Bash tool 執行指令、Read 讀取檔案、或 run_agent 委派任務。"
+                        "如果不知道怎麼繼續，使用 run_agent 把任務委派給子代理。"
+                    ),
+                ))
         else:
+            # No send_message — working silently
             _turns_since_notify += 1
-            if _turns_since_notify >= 4 and turn < MAX_TURNS - 2:
+            if _turns_since_notify >= 5 and turn < MAX_TURNS - 2:
                 _slog("⏰ MILESTONE", f"No send_message for {_turns_since_notify} turns — injecting reminder")
                 history.append(Message(
                     role="user",
                     content=(
                         f"⏰ 你已執行 {_turns_since_notify} 輪未向用戶回報進度。"
-                        "請立即使用 send_message 發送里程碑更新，告知目前執行狀態（2-3 句話即可）。"
+                        "請在繼續工作的同時，用 send_message 發送一條簡短的進度更新（1-2 句話）。"
+                        "注意：只有在呼叫了 Bash/Read/Write 等實質工具之後才需要回報，不要虛報進度。"
                     ),
                 ))
                 _turns_since_notify = 0
