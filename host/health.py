@@ -65,7 +65,9 @@ async def handle_metrics(request) -> "web.Response":
     conn = db.get_conn()
     metrics = {}
 
-    for table in ["messages", "employees", "workflow_instances", "meetings", "audit_log"]:
+    # Allowlist of tables safe to query (fixes #182: avoid f-string SQL pattern)
+    _METRIC_TABLES = frozenset(["messages", "employees", "workflow_instances", "meetings", "audit_log"])
+    for table in _METRIC_TABLES:
         try:
             count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
             metrics[f"miniondesk_{table}_total"] = count

@@ -43,6 +43,11 @@ async def check(jid: str) -> tuple[bool, str]:
         while window and (now - window[0]) > _config.window_seconds:
             window.popleft()
 
+        # Clean up empty entries to prevent unbounded memory growth (fixes #180)
+        if not window:
+            del _windows[jid]
+            return True, ""
+
         if len(window) >= _config.max_requests:
             oldest = window[0]
             wait = int(_config.window_seconds - (now - oldest)) + 1

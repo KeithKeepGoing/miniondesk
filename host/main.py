@@ -107,6 +107,27 @@ async def main() -> None:
             log.warning("Blocked message from unauthorized sender: %s", sender_jid)
             return
 
+        # Rate limit check (fixes #175)
+        allowed, reason = await ratelimit.check(sender_jid)
+        if not allowed:
+            log.warning("Rate limited sender: %s", sender_jid)
+            chan = all_channels().get(channel)
+            if chan:
+                await chan.send_message(chat_jid, reason)
+            return
+
+        # Immune system scan (fixes #176)
+        from .immune import scan as immune_scan
+        threat = immune_scan(text)
+        if threat.blocked:
+            log.warning("Blocked message from %s: %s (pattern=%s)", sender_jid, threat.reason, threat.pattern)
+            chan = all_channels().get(channel)
+            if chan:
+                await chan.send_message(chat_jid, threat.reason)
+            return
+        if threat.reason:
+            log.info("DLP warning for %s: %s", sender_jid, threat.reason)
+
         # Get or assign minion
         minion_info = db.get_minion(chat_jid)
         if not minion_info:
@@ -128,7 +149,7 @@ async def main() -> None:
                         prompt=text,
                         sender_jid=sender_jid,
                     ),
-                    timeout=300.0
+                    timeout=config.CONTAINER_TIMEOUT + 10,  # fixes #179: use config instead of hardcoded 300s
                 )
             except asyncio.TimeoutError:
                 log.error(f"Container run timed out for {chat_jid}")
@@ -144,8 +165,8 @@ async def main() -> None:
                     from .memory import append_warm_log
                     try:
                         append_warm_log(chat_jid, text, reply)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        log.warning("Failed to append warm log for %s: %s", chat_jid, e)
             # ── Host Auto-Write Fallback ────────────────────────────────────
             try:
                 import datetime as _dt
