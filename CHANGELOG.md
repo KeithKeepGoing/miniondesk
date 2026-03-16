@@ -1,5 +1,9 @@
 # Changelog
 
+## [2.4.17] - 2026-03-16
+### Refactored
+- 靈魂規則獨立為 container/runner/soul.md，runner 啟動時讀取注入 — 更新規則無需改 Python code
+
 ## [2.4.15] - 2026-03-16
 ### Added
 - MEMORY.md 啟動注入：session 啟動時讀取 {data_dir}/MEMORY.md，注入為「長期記憶」section — 讓知識歸檔真正有效 (#167)

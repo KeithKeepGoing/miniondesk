@@ -122,34 +122,20 @@ async def run(inp: dict) -> dict:
         "If you are stuck or do not know how to proceed, call run_agent to delegate the task to a subagent instead of faking progress."
     )
 
-    # ── 任務協調與智慧委派（靈魂規則）─────────────────────────────────────────
+    # ── 靈魂規則 (Soul Rules) — 從 soul.md 讀取 ──────────────────────────────
+    # soul.md 與 runner.py 同目錄，更新靈魂規則只需編輯該檔案，無需動 Python code。
+    # {{DATA_DIR}} 為執行時替換的佔位符，指向此 minion 的資料目錄。
     _data_dir = inp.get("dataDir", "/workspace/data")
-    system += (
-        "\n\n## 任務協調與智慧委派\n"
-        "\n### 預飛行分析 (Pre-flight)\n"
-        "Before executing any task, perform a brief internal pre-flight analysis:\n"
-        "1. 需求解構 — Identify core requirements, sub-steps, and technical risks.\n"
-        "2. 難度分級 — Classify the task:\n"
-        "   - Level A (Simple): Single-step, pure info query, file read/write → execute DIRECTLY and IMMEDIATELY.\n"
-        "   - Level B (Complex): System config, cross-tool-chain calls, multi-step logic, debugging → delegate via run_agent.\n"
-        "3. For Level A: skip announcing the analysis — just do it.\n"
-        "4. For Level B: announce before starting, then delegate.\n"
-        "\n### 智慧委派 (Delegation) — Level B tasks only\n"
-        "When a task is Level B:\n"
-        "- Announce working directory to user via send_message: '📁 工作目錄: [path]'\n"
-        "- Call run_agent with a self-contained, detailed prompt.\n"
-        "- Start that prompt with '/reasoning on' to enable deeper reasoning in the subagent.\n"
-        "- After receiving subagent output: review, fix any gaps, then deliver the complete result.\n"
-        "\n### 整合與進化 (Synthesis)\n"
-        "After completing any significant task:\n"
-        f"- Append a brief summary to {_data_dir}/MEMORY.md (create if it doesn't exist).\n"
-        "- Format: `[DATE] <task summary: what was done, key decisions, solutions>`\n"
-        "- This builds long-term institutional memory across sessions.\n"
-        "\n### 任務透明度 (Transparency) — Level B tasks only\n"
-        "1. 目錄宣告: Before starting, send '📁 工作目錄: [absolute path]' to user.\n"
-        f"2. 進度日誌: Create {_data_dir}/progress.log and write each key step with timestamp.\n"
-        "3. 里程碑回報: If estimated total time > 2 minutes, send send_message at each major milestone — never go silent for more than 2 minutes.\n"
-    )
+    _soul_path = os.path.join(os.path.dirname(__file__), "soul.md")
+    if os.path.exists(_soul_path):
+        try:
+            with open(_soul_path, encoding="utf-8") as _sf:
+                _soul_text = _sf.read().strip()
+            _soul_text = _soul_text.replace("{{DATA_DIR}}", str(_data_dir))
+            system += "\n\n" + _soul_text
+            _slog("🧠 SOUL", f"Injected soul.md ({len(_soul_text)} chars)")
+        except Exception as _soul_err:
+            _slog("⚠️ SOUL", f"Failed to read soul.md: {_soul_err}")
 
     # ── MEMORY.md 啟動注入（長期記憶）──────────────────────────────────────────
     # 每次 session 啟動時讀取 MEMORY.md，注入為「長期記憶」section。
