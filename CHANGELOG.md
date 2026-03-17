@@ -1,5 +1,45 @@
 # Changelog
 
+## [Unreleased] — UnifiedClaw Alignment
+
+### Architecture (Planned — Phase 1)
+- [ ] WebSocket IPC bridge (replacing file-based polling)
+- [ ] Universal Memory Bus integration (sqlite-vec + shared scope)
+- [ ] FitnessReporter for agent→gateway fitness feedback
+
+### Architecture (Planned — Phase 2)
+- [ ] Enterprise Agent Identity Layer (LDAP DN binding)
+- [ ] Cross-agent enterprise knowledge sharing
+- [ ] Department knowledge auto-injection
+
+### Added
+- ARCHITECTURE alignment issues (8 issues created for UnifiedClaw phases)
+- Comprehensive README with UnifiedClaw roadmap section
+
+### Fixed (In Progress)
+- See Issues #193-#209 for active security/architecture fixes
+
+---
+
+## [2.4.20] — 2026-03-17
+
+### Added
+- Microsoft Teams integration with HMAC-SHA256 verification
+- IBM Notes/HCL Domino email integration
+- LSF/Slurm HPC job management tools
+- FlexLM EDA license monitoring
+- Minion persona system (Phil/Kevin/Stuart/Bob)
+- Workflow engine (expense, IT ticket, leave request)
+- SECURITY.md — vulnerability reporting policy
+
+### Security
+- HMAC-SHA256 Teams webhook verification
+- Non-root container execution (minion, UID 1000)
+- IC-specific DLP rules
+- 17 security/architecture issues tracked
+
+---
+
 All notable changes to MinionDesk will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
