@@ -1,63 +1,76 @@
 # Release Notes
 
-## MinionDesk v2.4.20 (2026-03-17)
+## MinionDesk v2.5.0 — UnifiedClaw Enterprise Phase 1 Preview (Upcoming)
 
 ### Overview
-MinionDesk is an enterprise AI assistant platform designed for IC design companies, featuring complete data sovereignty (self-hosted), model-agnostic LLM support, and Docker container isolation for security.
+This upcoming release begins MinionDesk's integration into the **UnifiedClaw** unified framework, with focus on knowledge enhancement and enterprise tool standardization.
 
-### Key Features in v2.4.20
+### Planned Features
 
-#### Enterprise Integrations
-- **LDAP/Active Directory**: Full RBAC with group-based role assignment
-- **Microsoft Teams**: Webhook integration with HMAC-SHA256 security
-- **Jira & ServiceNow**: Ticket creation and workflow automation
-- **GitLab & Confluence**: Weekly report automation, knowledge base sync
-- **IBM Notes/HCL Domino**: Email integration for legacy enterprise environments
+#### Knowledge Base Enhancement (Phase 1)
+- `sqlite-vec` integration for semantic/vector search
+- Hybrid search combining vector similarity + FTS5 keywords
+- Embedding via Gemini text-embedding-004 API
 
-#### HPC & EDA Support
-- **LSF** (bjobs, bsub, bkill)
-- **Slurm** (squeue, sbatch, scancel)
-- **FlexLM** EDA license monitoring
-- **NetApp/GPFS** NAS integration
+#### Agent Fitness Feedback
+- Agent runtime reports response quality scores back to Gateway
+- Foundation for Evolution Engine integration (Phase 2)
 
-#### AI Capabilities
-- Multi-provider LLM support with automatic fallback
-- Three-tier memory system for context persistence
-- Department-aware routing (HR, IT, Finance, General)
-- Approval workflow engine with YAML-defined processes
-- RAG knowledge base with semantic search
+#### MemoryBus Interface
+- Unified memory access interface (preview)
+- Scope: private / department / company
 
-#### Security
-- Docker container isolation (non-root execution)
-- Prompt injection detection
-- IC-specific data loss prevention (DLP) rules
-- HMAC-SHA256 webhook verification (Teams)
-- Rate limiting and allowlist management
+### Architecture Evolution
 
-### Known Issues (Being Fixed)
-
-See GitHub Issues for the full list. Priority items:
-- Admin CLI authentication (Critical)
-- API key environment variable exposure (Critical)
-- Bash tool allowlist migration (Critical)
-- Audit log fail-hard implementation (High)
-
-### Installation
-
-```bash
-git clone https://github.com/KeithKeepGoing/miniondesk.git
-cd miniondesk
-cp .env.example .env
-# Edit .env with your configuration
-docker build -t miniondesk-agent ./container
-python host/main.py
+```
+v2.x (Current)                    v3.x (UnifiedClaw Target)
+──────────────────                ─────────────────────────
+FTS5-only KB search        →      Hybrid: vector + FTS5
+Isolated group memory      →      Universal Memory Bus
+No evolution engine        →      Evolution Engine (from EvoClaw)
+Basic RBAC (3 roles)       →      Unified RBAC (+ agent roles)
+5 channels                 →      7+ channels (+ Matrix)
+Ad-hoc tool interface      →      EnterpriseTool standard
 ```
 
-### Requirements
-- Python 3.12+
-- Docker
-- At least one LLM provider API key (Claude, Gemini, OpenAI, or Ollama)
-- Optional: LDAP server, Jira, Teams, etc.
+---
 
-### Upgrade Notes
-No breaking changes from v2.3.x. New enterprise integrations are opt-in via environment variables.
+## MinionDesk v2.4.21 — 2026-03-18
+
+### Summary
+Documentation and architecture planning release.
+
+### Changes
+- **Docs**: Added ARCHITECTURE.md with UnifiedClaw enterprise roadmap
+- **Docs**: Added SECURITY.md with vulnerability reporting policy
+- **Docs**: Added CHANGELOG.md version history
+- **Docs**: Added RELEASE.md
+- **Tracking**: 17 security issues created (3 Critical, 5 High, 5 Medium)
+- **Tracking**: 11 architecture roadmap issues created (Phases 1-3)
+
+### Security Notes
+3 CRITICAL issues require immediate attention:
+- Issue #193: Admin CLI authentication
+- Issue #194: API key environment variable exposure
+- Issue #195: Bash tool allowlist migration
+
+---
+
+## MinionDesk v2.4.20 — 2026-03-17
+
+### Summary
+Major release with enterprise integrations.
+
+### Added
+- Microsoft Teams channel (HMAC-SHA256)
+- IBM Notes/HCL Domino email integration
+- HPC tools (LSF bjobs, Slurm squeue, FlexLM)
+- Minion persona system (Phil/Kevin/Stuart/Bob)
+- Enterprise RBAC with LDAP/AD
+- Workflow engine (expense/IT/leave)
+- Three-tier memory system
+- Multi-provider LLM support
+
+---
+
+*NanoClaw → MinionDesk → UnifiedClaw enterprise branch*
