@@ -1,5 +1,44 @@
 # Changelog
 
+## [Unreleased] — UnifiedClaw Enterprise Roadmap
+
+### Architecture (Planned)
+- [ ] sqlite-vec semantic search for KnowledgeBase (Phase 1)
+- [ ] Port Evolution Engine from EvoClaw (Phase 2)
+- [ ] Universal Memory Bus — enterprise edition (Phase 2)
+- [ ] Enterprise Agent Identity Layer (Phase 2)
+- [ ] Enterprise tool standardization / BaseTool interface (Phase 3)
+- [ ] RBAC upgrade with agent roles (Phase 3)
+- [ ] Matrix channel support (Phase 3)
+- [ ] Merge into UnifiedClaw (Phase 3)
+
+### Phase 1 In Progress
+- [ ] sqlite-vec integration into knowledge_base.py
+- [ ] Hybrid search (vector + FTS5)
+- [ ] Agent fitness feedback mechanism
+
+---
+
+## [2.4.21] — 2026-03-18
+
+### Added
+- ARCHITECTURE.md — UnifiedClaw enterprise architecture roadmap
+- SECURITY.md — Vulnerability reporting policy
+- CHANGELOG.md — This file (version history)
+- RELEASE.md — Release notes
+
+### Architecture Issues Created
+- 11 architecture roadmap issues (Phases 1-3)
+- 3 CRITICAL security issues identified
+- 5 HIGH severity issues identified
+
+### Notes
+- MinionDesk contributes: Enterprise tools (LDAP/Jira/HPC/Workflow) + RBAC
+- MinionDesk gains: Evolution Engine + Universal Memory Bus (from EvoClaw)
+- Target: UnifiedClaw unified framework
+
+---
+
 All notable changes to MinionDesk will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
