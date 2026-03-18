@@ -2,10 +2,11 @@
 
 ## [Unreleased] — UnifiedClaw Alignment
 
-### Architecture (Planned — Phase 1)
-- [ ] WebSocket IPC bridge (replacing file-based polling)
-- [ ] Universal Memory Bus integration (sqlite-vec + shared scope)
-- [ ] FitnessReporter for agent→gateway fitness feedback
+### Architecture (Phase 1 — Implemented)
+- [x] WebSocket IPC bridge (WSBridge, port 8769)
+- [x] Universal Memory Bus (SharedMemoryStore + VectorStore, ~/.miniondesk/memory.db)
+- [x] Agent Identity Layer (stable SHA-256 IDs, ~/.miniondesk/agents.db)
+- [ ] FitnessReporter for agent→gateway fitness feedback (Phase 2)
 
 ### Architecture (Planned — Phase 2)
 - [ ] Enterprise Agent Identity Layer (LDAP DN binding)

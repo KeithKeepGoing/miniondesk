@@ -13,6 +13,8 @@ dependencies = [
     "pyyaml>=6.0",
     # .env loading — required for GITHUB_TOKEN and other secrets to be picked up
     "python-dotenv>=1.0.0",
+    # Phase 1: WebSocket IPC bridge
+    "websockets>=12.0",
     # Enterprise / LDAP
     "ldap3>=2.9",
 ]
