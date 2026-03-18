@@ -356,6 +356,23 @@ async def main() -> None:
         _sdk_api = None
         log.warning(f"[Phase 2] SdkApi unavailable: {_e}")
 
+    # ── Phase 3: BotRegistry + Matrix channel ──────────────────────────────
+    try:
+        from .identity.bot_registry import BotRegistry as _BotReg, bootstrap_known_bots as _boot_bots
+        _bot_reg = _BotReg()
+        _boot_bots(_bot_reg)
+        log.info("[Phase 3] BotRegistry initialized — 小白/小Eve/MinionDesk registered")
+    except Exception as _e:
+        log.warning(f"[Phase 3] BotRegistry unavailable: {_e}")
+
+    if os.getenv("MATRIX_ACCESS_TOKEN"):
+        try:
+            import host.channels.matrix as matrix_chan
+            matrix_chan.init()
+            log.info("[Phase 3] Matrix channel initialized")
+        except Exception as _e:
+            log.warning(f"[Phase 3] Matrix channel unavailable: {_e}")
+
     # Start all channels
     channel_tasks = []
     for name, chan in all_channels().items():

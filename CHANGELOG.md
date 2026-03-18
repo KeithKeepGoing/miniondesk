@@ -12,11 +12,12 @@
 - [x] Universal Memory Bus (SharedMemoryStore + VectorStore, ~/.miniondesk/memory.db)
 - [x] Agent Identity Layer (stable SHA-256 IDs, ~/.miniondesk/agents.db)
 
-### Architecture (Planned — Phase 3)
-- [ ] Enterprise Agent Identity Layer (LDAP DN binding)
-- [ ] Cross-agent enterprise knowledge sharing
-- [ ] Department knowledge auto-injection
-- [ ] FitnessReporter for agent→gateway fitness feedback
+### Architecture (Phase 3 — Implemented)
+- [x] Cross-bot Identity Protocol (crossbot/1.0) — 小白 ↔ 小Eve ↔ MinionDesk recognition
+- [x] BotRegistry with SQLite persistence, handshake + trust model
+- [x] Enhanced RBAC — Permission enum + per-operation gates (17 permissions)
+- [x] Matrix.org channel adapter (host/channels/matrix.py)
+- [x] Multi-tenant namespace isolation in memory
 
 ### Added
 - ARCHITECTURE alignment issues (8 issues created for UnifiedClaw phases)
