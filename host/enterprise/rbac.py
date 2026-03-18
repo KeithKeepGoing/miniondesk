@@ -6,6 +6,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Set, Optional, List
 import time as _time
+import threading
 import logging
 from .. import db
 
@@ -55,19 +56,38 @@ ROLE_PERMISSIONS = {
 }
 
 # ── Role cache ────────────────────────────────────────────────────────────────
-_role_cache: dict = {}  # {jid: (role, fetched_at)}
+_role_cache: dict = {}
+_cache_lock = threading.Lock()
 _CACHE_TTL = 60.0
+_CACHE_MAXSIZE = 512
+
+# ── DB write lock ─────────────────────────────────────────────────────────────
+_db_lock = threading.Lock()
 
 
 def _get_cached_role(jid: str) -> Optional[str]:
-    entry = _role_cache.get(jid)
-    if entry and (_time.time() - entry[1]) < _CACHE_TTL:
-        return entry[0]
+    with _cache_lock:
+        entry = _role_cache.get(jid)
+        if entry:
+            role, fetched_at = entry
+            if (_time.time() - fetched_at) < _CACHE_TTL:
+                return role
+            # Expired — evict immediately
+            del _role_cache[jid]
     return None
 
 
+def _set_cached_role(jid: str, role: str):
+    with _cache_lock:
+        if len(_role_cache) >= _CACHE_MAXSIZE:
+            oldest = min(_role_cache, key=lambda k: _role_cache[k][1])
+            del _role_cache[oldest]
+        _role_cache[jid] = (role, _time.time())
+
+
 def _invalidate_role_cache(jid: str) -> None:
-    _role_cache.pop(jid, None)
+    with _cache_lock:
+        _role_cache.pop(jid, None)
 
 
 def get_role(jid: str) -> str:
@@ -77,7 +97,7 @@ def get_role(jid: str) -> str:
     conn = db.get_conn()
     row = conn.execute("SELECT role FROM employees WHERE jid = ?", (jid,)).fetchone()
     role = row[0] if row else "employee"
-    _role_cache[jid] = (role, _time.time())
+    _set_cached_role(jid, role)
     return role
 
 
@@ -102,10 +122,11 @@ def require_permission(jid: str, permission: Permission) -> bool:
 
 def register_employee(jid: str, name: str, dept: str, role: str = "employee") -> None:
     conn = db.get_conn()
-    conn.execute(
-        "INSERT OR REPLACE INTO employees (jid, name, dept, role) VALUES (?, ?, ?, ?)",
-        (jid, name, dept, role),
-    )
-    conn.commit()
+    with _db_lock:
+        conn.execute(
+            "INSERT OR REPLACE INTO employees (jid, name, dept, role) VALUES (?, ?, ?, ?)",
+            (jid, name, dept, role),
+        )
+        conn.commit()
     _invalidate_role_cache(jid)
     logger.info(f"Registered employee: {name} ({jid}) as {role} in {dept}")
