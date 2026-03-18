@@ -5,7 +5,7 @@ Extends original employee/manager/admin with Permission enum + operation gates.
 from __future__ import annotations
 from enum import Enum
 from typing import Set, Optional, List
-import time
+import time as _time
 import logging
 from .. import db
 
@@ -54,11 +54,31 @@ ROLE_PERMISSIONS = {
     },
 }
 
+# ── Role cache ────────────────────────────────────────────────────────────────
+_role_cache: dict = {}  # {jid: (role, fetched_at)}
+_CACHE_TTL = 60.0
+
+
+def _get_cached_role(jid: str) -> Optional[str]:
+    entry = _role_cache.get(jid)
+    if entry and (_time.time() - entry[1]) < _CACHE_TTL:
+        return entry[0]
+    return None
+
+
+def _invalidate_role_cache(jid: str) -> None:
+    _role_cache.pop(jid, None)
+
 
 def get_role(jid: str) -> str:
+    cached = _get_cached_role(jid)
+    if cached is not None:
+        return cached
     conn = db.get_conn()
     row = conn.execute("SELECT role FROM employees WHERE jid = ?", (jid,)).fetchone()
-    return row[0] if row else "employee"
+    role = row[0] if row else "employee"
+    _role_cache[jid] = (role, _time.time())
+    return role
 
 
 def check_permission(jid: str, required_role: str) -> bool:
@@ -87,4 +107,5 @@ def register_employee(jid: str, name: str, dept: str, role: str = "employee") ->
         (jid, name, dept, role),
     )
     conn.commit()
+    _invalidate_role_cache(jid)
     logger.info(f"Registered employee: {name} ({jid}) as {role} in {dept}")

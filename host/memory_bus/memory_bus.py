@@ -33,10 +33,11 @@ class SharedMemoryStore:
         self._lock = threading.Lock()
 
     def get(self, namespace: str, key: str) -> str | None:
-        row = self._conn.execute(
-            "SELECT value FROM shared_memory WHERE namespace=? AND key=?",
-            (namespace, key),
-        ).fetchone()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT value FROM shared_memory WHERE namespace=? AND key=?",
+                (namespace, key),
+            ).fetchone()
         return row[0] if row else None
 
     def set(self, namespace: str, key: str, value: str, *, ttl_secs: int = 0) -> None:
@@ -61,10 +62,11 @@ class SharedMemoryStore:
             return cur.rowcount > 0
 
     def list_keys(self, namespace: str) -> list[str]:
-        rows = self._conn.execute(
-            "SELECT key FROM shared_memory WHERE namespace=? AND (expires_at=0 OR expires_at>?)",
-            (namespace, time.time()),
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT key FROM shared_memory WHERE namespace=? AND (expires_at=0 OR expires_at>?)",
+                (namespace, time.time()),
+            ).fetchall()
         return [r[0] for r in rows]
 
     def gc(self) -> int:
@@ -107,13 +109,14 @@ class VectorStore:
     def search_text(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
         """FTS5 text search fallback when embeddings are not available."""
         try:
-            rows = self._conn.execute(
-                """SELECT doc_id, content, metadata_json
-                   FROM vector_store_fts
-                   WHERE vector_store_fts MATCH ?
-                   LIMIT ?""",
-                (query, limit),
-            ).fetchall()
+            with self._lock:
+                rows = self._conn.execute(
+                    """SELECT doc_id, content, metadata_json
+                       FROM vector_store_fts
+                       WHERE vector_store_fts MATCH ?
+                       LIMIT ?""",
+                    (query, limit),
+                ).fetchall()
             return [
                 {"doc_id": r[0], "content": r[1], "metadata": json.loads(r[2] or "{}")}
                 for r in rows
@@ -122,10 +125,11 @@ class VectorStore:
             return []
 
     def get(self, doc_id: str) -> dict[str, Any] | None:
-        row = self._conn.execute(
-            "SELECT doc_id, content, embedding_json, metadata_json FROM vector_store WHERE doc_id=?",
-            (doc_id,),
-        ).fetchone()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT doc_id, content, embedding_json, metadata_json FROM vector_store WHERE doc_id=?",
+                (doc_id,),
+            ).fetchone()
         if not row:
             return None
         return {
@@ -168,6 +172,7 @@ class MemoryBus:
         self._conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA busy_timeout=5000")
+        self._lock = threading.Lock()
         self._create_tables()
         self.shared = SharedMemoryStore(self._conn)
         self.vector = VectorStore(self._conn)
@@ -205,8 +210,33 @@ class MemoryBus:
         try:
             self._conn.execute("""
                 CREATE VIRTUAL TABLE IF NOT EXISTS vector_store_fts USING fts5(
-                    doc_id, content, metadata_json, tokenize='trigram'
+                    doc_id, content, metadata_json, tokenize='trigram',
+                    content='vector_store', content_rowid='rowid'
                 )
+            """)
+            self._conn.commit()
+        except Exception:
+            pass
+
+        # Triggers to keep FTS5 content table in sync with vector_store
+        try:
+            self._conn.executescript("""
+                CREATE TRIGGER IF NOT EXISTS vector_store_ai AFTER INSERT ON vector_store BEGIN
+                    INSERT INTO vector_store_fts(rowid, doc_id, content, metadata_json)
+                        VALUES (new.rowid, new.doc_id, new.content, new.metadata_json);
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS vector_store_ad AFTER DELETE ON vector_store BEGIN
+                    INSERT INTO vector_store_fts(vector_store_fts, rowid, doc_id, content, metadata_json)
+                        VALUES ('delete', old.rowid, old.doc_id, old.content, old.metadata_json);
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS vector_store_au AFTER UPDATE ON vector_store BEGIN
+                    INSERT INTO vector_store_fts(vector_store_fts, rowid, doc_id, content, metadata_json)
+                        VALUES ('delete', old.rowid, old.doc_id, old.content, old.metadata_json);
+                    INSERT INTO vector_store_fts(rowid, doc_id, content, metadata_json)
+                        VALUES (new.rowid, new.doc_id, new.content, new.metadata_json);
+                END;
             """)
             self._conn.commit()
         except Exception:
@@ -215,9 +245,10 @@ class MemoryBus:
     # ── Hot memory tier ───────────────────────────────────────────
 
     def hot_get(self, jid: str) -> str:
-        row = self._conn.execute(
-            "SELECT content FROM bus_hot_memory WHERE jid=?", (jid,)
-        ).fetchone()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT content FROM bus_hot_memory WHERE jid=?", (jid,)
+            ).fetchone()
         return row[0] if row else ""
 
     def hot_set(self, jid: str, content: str) -> None:
@@ -225,12 +256,13 @@ class MemoryBus:
         if len(encoded) > HOT_MAX_BYTES:
             content = encoded[:HOT_MAX_BYTES].decode("utf-8", errors="ignore")
             log.warning("MemoryBus: hot memory truncated to 8KB for jid=%s", jid)
-        self._conn.execute(
-            """INSERT INTO bus_hot_memory (jid, content, updated_at) VALUES (?, ?, ?)
-               ON CONFLICT(jid) DO UPDATE SET content=excluded.content, updated_at=excluded.updated_at""",
-            (jid, content, time.time()),
-        )
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(
+                """INSERT INTO bus_hot_memory (jid, content, updated_at) VALUES (?, ?, ?)
+                   ON CONFLICT(jid) DO UPDATE SET content=excluded.content, updated_at=excluded.updated_at""",
+                (jid, content, time.time()),
+            )
+            self._conn.commit()
 
     # ── Convenience wrappers (used by SdkApi) ─────────────────────
 
