@@ -12,12 +12,19 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
+import hashlib
+
 from . import config, db
 from .logger import get_logger
 from .memory import get_hot_memory, update_hot_memory
 _log = get_logger("runner")
 
 _MINION_NAME_RE = re.compile(r'^[a-zA-Z0-9_\-]+$')
+
+
+def _get_agent_id(minion_name: str, project: str = "miniondesk", channel: str = "telegram") -> str:
+    raw = f"{minion_name.lower()}:{project.lower()}:{channel.lower()}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
 async def run_container(
@@ -69,9 +76,11 @@ async def run_container(
     ]
 
     # Build stdin payload
+    agent_id = _get_agent_id(minion_name)
     payload = {
         "chatJid": chat_jid,
         "minionName": minion_name,
+        "agentId": agent_id,
         "senderJid": sender_jid,
         "prompt": prompt,
         "personaMd": persona_md,

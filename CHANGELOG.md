@@ -2,16 +2,21 @@
 
 ## [Unreleased] — UnifiedClaw Alignment
 
+### Architecture (Phase 2 — Implemented)
+- [x] MemorySummarizer: LLM-powered conversation→MEMORY.md compression (host/memory/summarizer.py)
+- [x] SdkApi: External WebSocket API on port 8770 (host/sdk_api.py)
+- [x] AGENT_ID: stable SHA-256 agent ID injected into container runner payload
+
 ### Architecture (Phase 1 — Implemented)
 - [x] WebSocket IPC bridge (WSBridge, port 8769)
 - [x] Universal Memory Bus (SharedMemoryStore + VectorStore, ~/.miniondesk/memory.db)
 - [x] Agent Identity Layer (stable SHA-256 IDs, ~/.miniondesk/agents.db)
-- [ ] FitnessReporter for agent→gateway fitness feedback (Phase 2)
 
-### Architecture (Planned — Phase 2)
+### Architecture (Planned — Phase 3)
 - [ ] Enterprise Agent Identity Layer (LDAP DN binding)
 - [ ] Cross-agent enterprise knowledge sharing
 - [ ] Department knowledge auto-injection
+- [ ] FitnessReporter for agent→gateway fitness feedback
 
 ### Added
 - ARCHITECTURE alignment issues (8 issues created for UnifiedClaw phases)
