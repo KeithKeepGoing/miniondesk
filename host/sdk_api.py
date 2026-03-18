@@ -124,12 +124,12 @@ class SdkApi:
             return {"action": "bot_list", "bots": [b.to_dict() for b in bots]}
 
         elif action == "task_submit":
-            task = payload.get("task", "")
-            context = payload.get("context", {})
+            # TODO: wire to actual task queue (currently unimplemented)
+            # Return error instead of lying with "queued"
             return {
                 "action": "task_submit",
-                "status": "queued",
-                "task": task,
+                "status": "error",
+                "error": "task_submit not yet connected to task queue",
                 "ts": time.time(),
             }
 

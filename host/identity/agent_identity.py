@@ -15,6 +15,7 @@ Identity schema:
 """
 from __future__ import annotations
 
+import atexit
 import hashlib
 import json
 import logging
@@ -75,6 +76,7 @@ class AgentIdentity:
         self._pending_heartbeats: dict[str, float] = {}
         self._last_heartbeat_flush: float = 0.0
         self._heartbeat_flush_interval = 60.0
+        atexit.register(self._flush_heartbeats)
         log.info("AgentIdentity initialized: %s", self._db_path)
 
     def _create_tables(self) -> None:
@@ -150,7 +152,8 @@ class AgentIdentity:
 
     def heartbeat(self, agent_id: str) -> bool:
         """Update last_seen timestamp. Writes are coalesced and flushed every 60s."""
-        self._pending_heartbeats[agent_id] = time.time()
+        with self._lock:
+            self._pending_heartbeats[agent_id] = time.time()
         now = time.time()
         if now - self._last_heartbeat_flush >= self._heartbeat_flush_interval:
             self._flush_heartbeats()
@@ -159,16 +162,16 @@ class AgentIdentity:
 
     def _flush_heartbeats(self) -> None:
         """Flush all pending heartbeat updates to SQLite in a single transaction."""
-        if not self._pending_heartbeats:
-            return
         with self._lock:
-            for agent_id, last_seen in self._pending_heartbeats.items():
-                self._conn.execute(
-                    "UPDATE agents SET last_seen=? WHERE agent_id=?",
-                    (last_seen, agent_id),
-                )
+            if not self._pending_heartbeats:
+                return
+            updates = [(last_seen, agent_id) for agent_id, last_seen in self._pending_heartbeats.items()]
+            self._conn.executemany(
+                "UPDATE agents SET last_seen=? WHERE agent_id=?",
+                updates
+            )
             self._conn.commit()
-        self._pending_heartbeats.clear()
+            self._pending_heartbeats.clear()
         self._last_heartbeat_flush = time.time()
 
     def list_agents(self, role: str | None = None, deployment: str | None = None) -> list[Identity]:

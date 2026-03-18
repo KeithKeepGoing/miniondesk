@@ -90,6 +90,7 @@ class VectorStore:
     def __init__(self, conn: sqlite3.Connection):
         self._conn = conn
         self._lock = threading.Lock()
+        self._fts5_available = False
 
     def upsert(self, doc_id: str, content: str, embedding: list[float] | None = None,
                metadata: dict | None = None) -> None:
@@ -107,22 +108,31 @@ class VectorStore:
             self._conn.commit()
 
     def search_text(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
-        """FTS5 text search fallback when embeddings are not available."""
-        try:
+        """FTS5 text search. Falls back to LIKE search when FTS5 is unavailable."""
+        if not self._fts5_available:
+            # Fallback: simple LIKE search
             with self._lock:
                 rows = self._conn.execute(
-                    """SELECT doc_id, content, metadata_json
-                       FROM vector_store_fts
-                       WHERE vector_store_fts MATCH ?
-                       LIMIT ?""",
-                    (query, limit),
+                    "SELECT doc_id, content, metadata_json FROM vector_store WHERE content LIKE ? LIMIT ?",
+                    (f"%{query}%", limit),
                 ).fetchall()
             return [
                 {"doc_id": r[0], "content": r[1], "metadata": json.loads(r[2] or "{}")}
                 for r in rows
             ]
-        except Exception:
-            return []
+        # FTS5 search
+        with self._lock:
+            rows = self._conn.execute(
+                """SELECT doc_id, content, metadata_json
+                   FROM vector_store_fts
+                   WHERE vector_store_fts MATCH ?
+                   LIMIT ?""",
+                (query, limit),
+            ).fetchall()
+        return [
+            {"doc_id": r[0], "content": r[1], "metadata": json.loads(r[2] or "{}")}
+            for r in rows
+        ]
 
     def get(self, doc_id: str) -> dict[str, Any] | None:
         with self._lock:
@@ -176,6 +186,7 @@ class MemoryBus:
         self._create_tables()
         self.shared = SharedMemoryStore(self._conn)
         self.vector = VectorStore(self._conn)
+        self.vector._fts5_available = self._fts5_available
         log.info("MemoryBus initialized: %s", self._db_path)
 
     def _create_tables(self) -> None:
@@ -207,6 +218,7 @@ class MemoryBus:
         self._conn.commit()
 
         # FTS5 for vector_store text search fallback
+        self._fts5_available = False
         try:
             self._conn.execute("""
                 CREATE VIRTUAL TABLE IF NOT EXISTS vector_store_fts USING fts5(
@@ -215,32 +227,36 @@ class MemoryBus:
                 )
             """)
             self._conn.commit()
-        except Exception:
-            pass
+            self._fts5_available = True
+        except Exception as e:
+            log.warning("FTS5 not available: %s. Text search disabled.", e)
+            self._fts5_available = False
 
         # Triggers to keep FTS5 content table in sync with vector_store
-        try:
-            self._conn.executescript("""
-                CREATE TRIGGER IF NOT EXISTS vector_store_ai AFTER INSERT ON vector_store BEGIN
-                    INSERT INTO vector_store_fts(rowid, doc_id, content, metadata_json)
-                        VALUES (new.rowid, new.doc_id, new.content, new.metadata_json);
-                END;
+        if self._fts5_available:
+            try:
+                self._conn.executescript("""
+                    CREATE TRIGGER IF NOT EXISTS vector_store_ai AFTER INSERT ON vector_store BEGIN
+                        INSERT INTO vector_store_fts(rowid, doc_id, content, metadata_json)
+                            VALUES (new.rowid, new.doc_id, new.content, new.metadata_json);
+                    END;
 
-                CREATE TRIGGER IF NOT EXISTS vector_store_ad AFTER DELETE ON vector_store BEGIN
-                    INSERT INTO vector_store_fts(vector_store_fts, rowid, doc_id, content, metadata_json)
-                        VALUES ('delete', old.rowid, old.doc_id, old.content, old.metadata_json);
-                END;
+                    CREATE TRIGGER IF NOT EXISTS vector_store_ad AFTER DELETE ON vector_store BEGIN
+                        INSERT INTO vector_store_fts(vector_store_fts, rowid, doc_id, content, metadata_json)
+                            VALUES ('delete', old.rowid, old.doc_id, old.content, old.metadata_json);
+                    END;
 
-                CREATE TRIGGER IF NOT EXISTS vector_store_au AFTER UPDATE ON vector_store BEGIN
-                    INSERT INTO vector_store_fts(vector_store_fts, rowid, doc_id, content, metadata_json)
-                        VALUES ('delete', old.rowid, old.doc_id, old.content, old.metadata_json);
-                    INSERT INTO vector_store_fts(rowid, doc_id, content, metadata_json)
-                        VALUES (new.rowid, new.doc_id, new.content, new.metadata_json);
-                END;
-            """)
-            self._conn.commit()
-        except Exception:
-            pass
+                    CREATE TRIGGER IF NOT EXISTS vector_store_au AFTER UPDATE ON vector_store BEGIN
+                        INSERT INTO vector_store_fts(vector_store_fts, rowid, doc_id, content, metadata_json)
+                            VALUES ('delete', old.rowid, old.doc_id, old.content, old.metadata_json);
+                        INSERT INTO vector_store_fts(rowid, doc_id, content, metadata_json)
+                            VALUES (new.rowid, new.doc_id, new.content, new.metadata_json);
+                    END;
+                """)
+                self._conn.commit()
+            except Exception as e:
+                log.warning("FTS5 triggers failed: %s", e)
+                self._fts5_available = False
 
     # ── Hot memory tier ───────────────────────────────────────────
 
