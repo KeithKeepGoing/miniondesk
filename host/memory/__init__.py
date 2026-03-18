@@ -5,7 +5,6 @@ from .search import memory_search
 
 try:
     from .summarizer import MemorySummarizer
+    __all__ = ["get_hot_memory", "update_hot_memory", "append_warm_log", "run_micro_sync", "memory_search", "MemorySummarizer"]
 except ImportError:
-    pass
-
-__all__ = ["get_hot_memory", "update_hot_memory", "append_warm_log", "run_micro_sync", "memory_search"]
+    __all__ = ["get_hot_memory", "update_hot_memory", "append_warm_log", "run_micro_sync", "memory_search"]

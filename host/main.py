@@ -350,7 +350,7 @@ async def main() -> None:
         except Exception:
             pass
         _sdk_api = _SdkApi(memory_bus=_memory_bus_ref)
-        asyncio.ensure_future(_sdk_api.start())
+        asyncio.create_task(_sdk_api.start())
         log.info("[Phase 2] SdkApi started on port 8770")
     except Exception as _e:
         _sdk_api = None

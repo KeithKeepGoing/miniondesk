@@ -232,6 +232,16 @@ class MemoryBus:
         )
         self._conn.commit()
 
+    # ── Convenience wrappers (used by SdkApi) ─────────────────────
+
+    def recall(self, key: str, scope: str = "shared") -> str | None:
+        """Retrieve a value from shared memory by key. scope is the namespace."""
+        return self.shared.get(scope, key)
+
+    def remember(self, key: str, value: str, scope: str = "shared") -> None:
+        """Store a value in shared memory. scope is the namespace."""
+        self.shared.set(scope, key, str(value))
+
     # ── Lifecycle ─────────────────────────────────────────────────
 
     def close(self) -> None:

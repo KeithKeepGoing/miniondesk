@@ -16,9 +16,10 @@ from typing import Optional, Callable, List
 from dataclasses import dataclass, field
 import time
 
+from . import register_channel
+
 logger = logging.getLogger(__name__)
 
-_send_callback: Optional[Callable] = None
 _matrix_channel = None
 
 
@@ -99,31 +100,55 @@ class MatrixClient:
         self._handlers.append(fn)
         return fn
 
-    async def start(self):
-        logger.info(f"Matrix channel starting: {self.user_id}")
-        while True:
-            msgs = await self.sync_once()
-            for msg in msgs:
-                for h in self._handlers:
-                    try:
-                        await h(msg)
-                    except Exception as e:
-                        logger.error(f"Matrix handler error: {e}")
-            if not msgs:
-                await asyncio.sleep(1)
-
     def is_configured(self) -> bool:
         return bool(self.homeserver and self.access_token and self.user_id)
 
 
-def init():
+class MatrixChannel:
+    """Channel wrapper for MatrixClient — implements the Channel protocol."""
+
+    def __init__(self, client: MatrixClient):
+        self._client = client
+
+    async def send_message(self, chat_jid: str, text: str) -> None:
+        # chat_jid format: "matrix:{room_id}" or bare room_id
+        room_id = chat_jid.removeprefix("matrix:")
+        await self._client.send(text, room_id=room_id or None)
+
+    async def start(self, on_message: Callable) -> None:
+        logger.info(f"Matrix channel starting: {self._client.user_id}")
+        while True:
+            msgs = await self._client.sync_once()
+            for msg in msgs:
+                # Forward each incoming Matrix message through the main on_message pipeline
+                chat_jid = f"matrix:{msg.room_id}"
+                sender_jid = msg.sender
+                try:
+                    await on_message(
+                        chat_jid=chat_jid,
+                        sender_jid=sender_jid,
+                        text=msg.body,
+                        channel="matrix",
+                    )
+                except Exception as e:
+                    logger.error(f"Matrix handler error: {e}")
+            if not msgs:
+                await asyncio.sleep(1)
+
+
+def init() -> None:
     global _matrix_channel
-    _matrix_channel = MatrixClient()
-    if not _matrix_channel.is_configured():
+    client = MatrixClient()
+    if not client.is_configured():
         logger.debug("Matrix channel not configured — skipping")
         return
+    channel = MatrixChannel(client)
+    _matrix_channel = channel
+    register_channel("matrix", channel)
     logger.info("Matrix channel initialized")
 
 
 def get_client() -> Optional[MatrixClient]:
-    return _matrix_channel
+    if _matrix_channel is not None:
+        return _matrix_channel._client
+    return None
