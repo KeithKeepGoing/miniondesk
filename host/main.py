@@ -332,6 +332,30 @@ async def main() -> None:
             except Exception as e:
                 expiry_log.error(f"Expiry check failed: {e}")
 
+    # ── Phase 2: MemorySummarizer + SdkApi ─────────────────────────────────
+    try:
+        from .memory.summarizer import MemorySummarizer as _MemorySummarizer
+        _summarizer = _MemorySummarizer()
+        log.info("[Phase 2] MemorySummarizer initialized")
+    except Exception as _e:
+        _summarizer = None
+        log.warning(f"[Phase 2] MemorySummarizer unavailable: {_e}")
+
+    try:
+        from .sdk_api import SdkApi as _SdkApi
+        _memory_bus_ref = None
+        try:
+            from .memory_bus.memory_bus import MemoryBus as _MB
+            _memory_bus_ref = _MB()
+        except Exception:
+            pass
+        _sdk_api = _SdkApi(memory_bus=_memory_bus_ref)
+        asyncio.ensure_future(_sdk_api.start())
+        log.info("[Phase 2] SdkApi started on port 8770")
+    except Exception as _e:
+        _sdk_api = None
+        log.warning(f"[Phase 2] SdkApi unavailable: {_e}")
+
     # Start all channels
     channel_tasks = []
     for name, chan in all_channels().items():
