@@ -21,11 +21,20 @@ class MemorySummarizer:
 
     def __init__(self, llm_provider: Optional[str] = None):
         self.provider = llm_provider or os.getenv("LLM_PROVIDER", "gemini")
-        self.api_key = (
-            os.getenv("GEMINI_API_KEY") or
-            os.getenv("ANTHROPIC_API_KEY") or
-            os.getenv("OPENAI_API_KEY") or ""
-        )
+        # Pick the API key that matches the selected provider, with fallback
+        if self.provider == "gemini":
+            self.api_key = os.getenv("GEMINI_API_KEY", "")
+        elif self.provider in ("claude", "anthropic"):
+            self.api_key = os.getenv("ANTHROPIC_API_KEY", "")
+        elif self.provider == "openai":
+            self.api_key = os.getenv("OPENAI_API_KEY", "")
+        else:
+            # Unknown provider: try each key in order as fallback
+            self.api_key = (
+                os.getenv("GEMINI_API_KEY") or
+                os.getenv("ANTHROPIC_API_KEY") or
+                os.getenv("OPENAI_API_KEY") or ""
+            )
 
     def summarize_session(
         self,
