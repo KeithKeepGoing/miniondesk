@@ -79,9 +79,10 @@ class MemorySummarizer:
         path = Path(memory_path)
         if not path.exists():
             return False
-        content = path.read_text(encoding="utf-8")
-        if len(content.encode()) < MAX_HOT_BYTES:
+        # Use stat() to check file size before reading the entire file
+        if path.stat().st_size < MAX_HOT_BYTES:
             return False
+        content = path.read_text(encoding="utf-8")
         prompt = (
             f"Compress this MEMORY.md for agent '{agent_name}' to under 4KB.\n"
             f"Keep only the most important facts. Use bullet points.\n\n"
@@ -97,9 +98,18 @@ class MemorySummarizer:
         return False
 
     def _call_llm(self, prompt: str) -> Optional[str]:
-        """Call LLM API with graceful fallback."""
+        """Call LLM API synchronously with graceful fallback.
+
+        Note: this method performs blocking HTTP I/O. If called from an async
+        context, callers should use asyncio.get_event_loop().run_in_executor()
+        to avoid blocking the event loop.
+        """
         if not self.api_key:
             return None
+        return self._call_llm_sync(prompt)
+
+    def _call_llm_sync(self, prompt: str) -> Optional[str]:
+        """Synchronous LLM dispatch — wraps provider-specific calls."""
         try:
             if self.provider == "gemini":
                 return self._call_gemini(prompt)

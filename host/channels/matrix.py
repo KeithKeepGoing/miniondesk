@@ -41,24 +41,41 @@ class MatrixClient:
         self.default_room = os.getenv("MATRIX_ROOM_ID", "")
         self._sync_token: Optional[str] = None
         self._handlers: List[Callable] = []
+        self._session = None
 
     def _headers(self):
         return {"Authorization": f"Bearer {self.access_token}", "Content-Type": "application/json"}
+
+    async def _get_session(self):
+        if self._session is None or self._session.closed:
+            try:
+                import aiohttp
+                self._session = aiohttp.ClientSession()
+            except ImportError:
+                return None
+        return self._session
+
+    async def close_session(self):
+        if self._session and not self._session.closed:
+            await self._session.close()
+            self._session = None
 
     async def send(self, text: str, room_id: Optional[str] = None) -> Optional[str]:
         room = room_id or self.default_room
         if not room or not self.access_token:
             return None
         try:
-            import aiohttp, uuid, json
+            import uuid
+            session = await self._get_session()
+            if not session:
+                return None
             txn = uuid.uuid4().hex
             url = f"{self.homeserver}/_matrix/client/v3/rooms/{room}/send/m.room.message/{txn}"
             payload = {"msgtype": "m.text", "body": text}
-            async with aiohttp.ClientSession() as s:
-                async with s.put(url, headers=self._headers(), json=payload) as r:
-                    if r.status == 200:
-                        data = await r.json()
-                        return data.get("event_id")
+            async with session.put(url, headers=self._headers(), json=payload) as r:
+                if r.status == 200:
+                    data = await r.json()
+                    return data.get("event_id")
         except Exception as e:
             logger.error(f"Matrix send error: {e}")
         return None
@@ -68,30 +85,31 @@ class MatrixClient:
         if not self.access_token:
             return messages
         try:
-            import aiohttp
+            session = await self._get_session()
+            if not session:
+                return messages
             params = {"timeout": 30000}
             if self._sync_token:
                 params["since"] = self._sync_token
             url = f"{self.homeserver}/_matrix/client/v3/sync"
-            async with aiohttp.ClientSession() as s:
-                async with s.get(url, headers=self._headers(), params=params) as r:
-                    if r.status != 200:
-                        return messages
-                    data = await r.json()
-                    self._sync_token = data.get("next_batch")
-                    for room_id, rd in data.get("rooms", {}).get("join", {}).items():
-                        for ev in rd.get("timeline", {}).get("events", []):
-                            if ev.get("type") != "m.room.message":
-                                continue
-                            if ev.get("sender") == self.user_id:
-                                continue
-                            c = ev.get("content", {})
-                            messages.append(MatrixMessage(
-                                room_id=room_id, sender=ev.get("sender", ""),
-                                body=c.get("body", ""), event_id=ev.get("event_id", ""),
-                                timestamp=ev.get("origin_server_ts", 0) / 1000,
-                                formatted_body=c.get("formatted_body"),
-                            ))
+            async with session.get(url, headers=self._headers(), params=params) as r:
+                if r.status != 200:
+                    return messages
+                data = await r.json()
+                self._sync_token = data.get("next_batch")
+                for room_id, rd in data.get("rooms", {}).get("join", {}).items():
+                    for ev in rd.get("timeline", {}).get("events", []):
+                        if ev.get("type") != "m.room.message":
+                            continue
+                        if ev.get("sender") == self.user_id:
+                            continue
+                        c = ev.get("content", {})
+                        messages.append(MatrixMessage(
+                            room_id=room_id, sender=ev.get("sender", ""),
+                            body=c.get("body", ""), event_id=ev.get("event_id", ""),
+                            timestamp=ev.get("origin_server_ts", 0) / 1000,
+                            formatted_body=c.get("formatted_body"),
+                        ))
         except Exception as e:
             logger.error(f"Matrix sync error: {e}")
         return messages
@@ -117,23 +135,26 @@ class MatrixChannel:
 
     async def start(self, on_message: Callable) -> None:
         logger.info(f"Matrix channel starting: {self._client.user_id}")
-        while True:
-            msgs = await self._client.sync_once()
-            for msg in msgs:
-                # Forward each incoming Matrix message through the main on_message pipeline
-                chat_jid = f"matrix:{msg.room_id}"
-                sender_jid = msg.sender
-                try:
-                    await on_message(
-                        chat_jid=chat_jid,
-                        sender_jid=sender_jid,
-                        text=msg.body,
-                        channel="matrix",
-                    )
-                except Exception as e:
-                    logger.error(f"Matrix handler error: {e}")
-            if not msgs:
-                await asyncio.sleep(1)
+        try:
+            while True:
+                msgs = await self._client.sync_once()
+                for msg in msgs:
+                    # Forward each incoming Matrix message through the main on_message pipeline
+                    chat_jid = f"matrix:{msg.room_id}"
+                    sender_jid = msg.sender
+                    try:
+                        await on_message(
+                            chat_jid=chat_jid,
+                            sender_jid=sender_jid,
+                            text=msg.body,
+                            channel="matrix",
+                        )
+                    except Exception as e:
+                        logger.error(f"Matrix handler error: {e}")
+                if not msgs:
+                    await asyncio.sleep(1)
+        finally:
+            await self._client.close_session()
 
 
 def init() -> None:

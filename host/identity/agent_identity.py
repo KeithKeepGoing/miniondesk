@@ -19,6 +19,7 @@ import hashlib
 import json
 import logging
 import sqlite3
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -68,7 +69,12 @@ class AgentIdentity:
         self._conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA busy_timeout=5000")
+        self._lock = threading.Lock()
         self._create_tables()
+        # Heartbeat write-coalescing state
+        self._pending_heartbeats: dict[str, float] = {}
+        self._last_heartbeat_flush: float = 0.0
+        self._heartbeat_flush_interval = 60.0
         log.info("AgentIdentity initialized: %s", self._db_path)
 
     def _create_tables(self) -> None:
@@ -95,24 +101,18 @@ class AgentIdentity:
         now = time.time()
         meta_json = json.dumps(metadata or {})
 
-        existing = self.get_by_id(agent_id)
-        if existing:
+        with self._lock:
             self._conn.execute(
-                "UPDATE agents SET last_seen=?, metadata_json=? WHERE agent_id=?",
-                (now, meta_json, agent_id),
+                """INSERT INTO agents (agent_id, name, role, deployment, created_at, last_seen, metadata_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(agent_id) DO UPDATE SET
+                       name=excluded.name,
+                       last_seen=excluded.last_seen,
+                       metadata_json=excluded.metadata_json""",
+                (agent_id, name, role, deployment, now, now, meta_json),
             )
             self._conn.commit()
-            existing.last_seen = now
-            existing.metadata = metadata or {}
-            log.debug("Agent re-registered: %s (%s)", name, agent_id[:12])
-            return existing
 
-        self._conn.execute(
-            """INSERT INTO agents (agent_id, name, role, deployment, created_at, last_seen, metadata_json)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (agent_id, name, role, deployment, now, now, meta_json),
-        )
-        self._conn.commit()
         log.info("Agent registered: %s (%s)", name, agent_id[:12])
         return Identity(
             agent_id=agent_id, name=name, role=role, deployment=deployment,
@@ -120,11 +120,12 @@ class AgentIdentity:
         )
 
     def get_by_id(self, agent_id: str) -> Identity | None:
-        row = self._conn.execute(
-            "SELECT agent_id, name, role, deployment, created_at, last_seen, metadata_json "
-            "FROM agents WHERE agent_id=?",
-            (agent_id,),
-        ).fetchone()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT agent_id, name, role, deployment, created_at, last_seen, metadata_json "
+                "FROM agents WHERE agent_id=?",
+                (agent_id,),
+            ).fetchone()
         if not row:
             return None
         return Identity(
@@ -133,11 +134,12 @@ class AgentIdentity:
         )
 
     def get_by_name(self, name: str) -> list[Identity]:
-        rows = self._conn.execute(
-            "SELECT agent_id, name, role, deployment, created_at, last_seen, metadata_json "
-            "FROM agents WHERE name=?",
-            (name,),
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT agent_id, name, role, deployment, created_at, last_seen, metadata_json "
+                "FROM agents WHERE name=?",
+                (name,),
+            ).fetchall()
         return [
             Identity(
                 agent_id=r[0], name=r[1], role=r[2], deployment=r[3],
@@ -147,13 +149,27 @@ class AgentIdentity:
         ]
 
     def heartbeat(self, agent_id: str) -> bool:
-        """Update last_seen timestamp. Returns False if agent not found."""
-        cur = self._conn.execute(
-            "UPDATE agents SET last_seen=? WHERE agent_id=?",
-            (time.time(), agent_id),
-        )
-        self._conn.commit()
-        return cur.rowcount > 0
+        """Update last_seen timestamp. Writes are coalesced and flushed every 60s."""
+        self._pending_heartbeats[agent_id] = time.time()
+        now = time.time()
+        if now - self._last_heartbeat_flush >= self._heartbeat_flush_interval:
+            self._flush_heartbeats()
+        # Return True optimistically; if the agent doesn't exist it will be a no-op on flush
+        return True
+
+    def _flush_heartbeats(self) -> None:
+        """Flush all pending heartbeat updates to SQLite in a single transaction."""
+        if not self._pending_heartbeats:
+            return
+        with self._lock:
+            for agent_id, last_seen in self._pending_heartbeats.items():
+                self._conn.execute(
+                    "UPDATE agents SET last_seen=? WHERE agent_id=?",
+                    (last_seen, agent_id),
+                )
+            self._conn.commit()
+        self._pending_heartbeats.clear()
+        self._last_heartbeat_flush = time.time()
 
     def list_agents(self, role: str | None = None, deployment: str | None = None) -> list[Identity]:
         """List agents, optionally filtered by role or deployment."""
@@ -169,7 +185,8 @@ class AgentIdentity:
         if clauses:
             query += " WHERE " + " AND ".join(clauses)
         query += " ORDER BY last_seen DESC"
-        rows = self._conn.execute(query, params).fetchall()
+        with self._lock:
+            rows = self._conn.execute(query, params).fetchall()
         return [
             Identity(
                 agent_id=r[0], name=r[1], role=r[2], deployment=r[3],
@@ -179,10 +196,12 @@ class AgentIdentity:
         ]
 
     def remove(self, agent_id: str) -> bool:
-        cur = self._conn.execute("DELETE FROM agents WHERE agent_id=?", (agent_id,))
-        self._conn.commit()
+        with self._lock:
+            cur = self._conn.execute("DELETE FROM agents WHERE agent_id=?", (agent_id,))
+            self._conn.commit()
         return cur.rowcount > 0
 
     def close(self) -> None:
+        self._flush_heartbeats()
         self._conn.close()
         log.info("AgentIdentity closed")
