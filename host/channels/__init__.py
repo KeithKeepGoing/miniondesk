@@ -1,6 +1,7 @@
 """
 Channel Protocol for MinionDesk.
 Each channel implements send_message and start().
+Supported channels: telegram, discord, teams, web, matrix (Phase 3).
 """
 from __future__ import annotations
 from typing import Callable, Protocol
