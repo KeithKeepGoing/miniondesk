@@ -21,13 +21,20 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
 from typing import Any, Callable, Awaitable
 
 log = logging.getLogger(__name__)
 
 DEFAULT_PORT = 8769
-DEFAULT_HOST = "0.0.0.0"
+# Default to localhost; set WS_BRIDGE_HOST env var to override
+DEFAULT_HOST = os.environ.get("WS_BRIDGE_HOST", "127.0.0.1")
+
+# Optional Bearer token for authenticating incoming WebSocket connections.
+# If set, every connecting agent must send {"type": "auth", "token": "<value>"}
+# as its very first message or the connection is closed immediately.
+_WS_BRIDGE_TOKEN = os.environ.get("WS_BRIDGE_TOKEN", "")
 
 MessageHandler = Callable[[dict[str, Any], Any], Awaitable[None]]
 
@@ -118,6 +125,34 @@ class WSBridge:
         """Handle a new WebSocket connection."""
         agent_id = None
         try:
+            # --- Auth gate ---------------------------------------------------
+            # If WS_BRIDGE_TOKEN is configured, the very first message must be
+            # {"type": "auth", "token": "<WS_BRIDGE_TOKEN>"}.  Any other first
+            # message causes an immediate close with code 4401 (Unauthorized).
+            if _WS_BRIDGE_TOKEN:
+                try:
+                    first_raw = await asyncio.wait_for(websocket.__anext__(), timeout=10)
+                except (asyncio.TimeoutError, StopAsyncIteration):
+                    log.warning("WSBridge: auth timeout or empty connection — closing")
+                    await websocket.close(code=4401, reason="Unauthorized")
+                    return
+                try:
+                    first_msg = json.loads(first_raw)
+                except json.JSONDecodeError:
+                    log.warning("WSBridge: invalid JSON in auth message — closing")
+                    await websocket.close(code=4401, reason="Unauthorized")
+                    return
+                import hmac as _hmac
+                provided = first_msg.get("token", "")
+                if first_msg.get("type") != "auth" or not _hmac.compare_digest(
+                    provided.encode(), _WS_BRIDGE_TOKEN.encode()
+                ):
+                    log.warning("WSBridge: invalid auth token from client — closing")
+                    await websocket.close(code=4401, reason="Unauthorized")
+                    return
+                log.debug("WSBridge: client authenticated")
+            # -----------------------------------------------------------------
+
             async for raw in websocket:
                 try:
                     msg = json.loads(raw)

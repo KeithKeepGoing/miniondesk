@@ -94,7 +94,7 @@ async def start_health_server(port: int = 8080) -> None:
         app.router.add_get("/metrics", handle_metrics)
         app.router.add_get("/", handle_health)  # Alias
 
-        bind_host = _os.getenv("HEALTH_BIND_HOST", "0.0.0.0")
+        bind_host = _os.getenv("HEALTH_BIND_HOST", "127.0.0.1")
         runner = web.AppRunner(app)
         await runner.setup()
         site = web.TCPSite(runner, bind_host, port)
