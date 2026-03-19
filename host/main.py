@@ -346,7 +346,7 @@ async def main() -> None:
         _memory_bus_ref = None
         try:
             from .memory_bus.memory_bus import MemoryBus as _MB
-            _memory_bus_ref = _MB()
+            _memory_bus_ref = _MB(db_path=config.DATA_DIR / "memory.db")
         except Exception:
             pass
         _sdk_api = _SdkApi(memory_bus=_memory_bus_ref)
