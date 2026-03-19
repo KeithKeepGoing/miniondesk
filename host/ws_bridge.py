@@ -134,7 +134,7 @@ class WSBridge:
                     log.info("WSBridge: agent connected: %s", agent_id[:12])
 
                 # Dispatch to handlers
-                for handler in self._handlers.get(msg_type, []):
+                for handler in list(self._handlers.get(msg_type, [])):
                     try:
                         await handler(msg, websocket)
                     except Exception as exc:
