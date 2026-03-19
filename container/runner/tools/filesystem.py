@@ -50,12 +50,28 @@ def _check_path(path: str, ctx: "ToolContext") -> str | None:
     return f"Access denied: {path} is outside allowed directories ({', '.join(ctx.allowed_paths)})"
 
 
+_MAX_BASH_TIMEOUT = 120  # hard cap in seconds regardless of what the agent requests
+
+
 def _bash(args: dict, ctx: ToolContext) -> str:
     cmd = args.get("command", "")
-    timeout = int(args.get("timeout", 30))
+    # Enforce a hard upper bound on timeout to prevent container hang
+    try:
+        timeout = min(int(args.get("timeout", 30)), _MAX_BASH_TIMEOUT)
+    except (TypeError, ValueError):
+        timeout = 30
+
     err = _validate_bash_cmd(cmd)
     if err:
         return err
+
+    # shell=True is intentional here: the Bash tool executes arbitrary shell
+    # commands as instructed by the agent.  The command originates from the LLM
+    # (itself influenced by user input) and runs inside an isolated Docker
+    # container with a limited filesystem view.  The blocklist above rejects the
+    # most dangerous patterns before execution.  No safe arg-list equivalent
+    # exists for a general-purpose shell tool; the container sandbox is the
+    # primary defence.
     result = subprocess.run(
         cmd, shell=True, capture_output=True, text=True, timeout=timeout
     )
